@@ -61,9 +61,9 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
       <h1 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:70px;line-height:.96;letter-spacing:-.04em;margin:0 0 20px;text-wrap:balance">Pool the route,<br>split the fare.</h1>
       <p style="margin:0 0 32px;font-size:18px;line-height:1.55;color:rgba(33,28,38,.62);max-width:480px;text-wrap:pretty">RoutePool reads your route as a graph and finds the S.P.I.T students already heading your way. Match, meet at the gate, share one auto.</p>
       <div style="display:flex;gap:34px;padding-top:26px;border-top:1px solid rgba(33,28,38,.1)">
-        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">1,284</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">verified students</div></div>
-        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">₹4.1L</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">pooled fares saved</div></div>
-        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">68%</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">requests matched</div></div>
+        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">{{ landingStudents }}</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">verified students</div></div>
+        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">{{ landingSaved }}</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">pooled fares saved</div></div>
+        <div><div style="font:700 30px 'Familjen Grotesk',sans-serif;letter-spacing:-.03em">{{ landingMatchRate }}</div><div style="font-size:12.5px;color:rgba(33,28,38,.5);font-weight:600">requests matched</div></div>
       </div>
     </div>
 
@@ -75,14 +75,17 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
         <p style="margin:0 0 26px;font-size:14.5px;line-height:1.5;color:rgba(33,28,38,.58)">Personal Gmail addresses are rejected. Only @spit.ac.in students and faculty can request or join a pool.</p>
         <label style="display:block;font:600 11px Karla,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(33,28,38,.45);margin-bottom:9px">Institutional email</label>
         <div style="display:flex;align-items:center;background:#fff;border:1.5px solid rgba(33,28,38,.12);border-radius:16px;padding:4px 6px 4px 16px;transition:border-color .2s" style-hover="border-color:rgba(242,162,48,.75)">
-          <input value="{{ email }}" onChange="{{ onEmail }}" placeholder="nishika.khade" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 16px Karla,sans-serif;color:#211C26;padding:14px 0"></input>
+          <input value="{{ email }}" onChange="{{ onEmail }}" placeholder="your.name" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 16px Karla,sans-serif;color:#211C26;padding:14px 0"></input>
           <span style="font:700 13.5px Karla,sans-serif;color:#8A2B6B;background:#F7EBF3;padding:10px 12px;border-radius:11px;white-space:nowrap">@spit.ac.in</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:14px 0 24px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="3" stroke="#157F63" stroke-width="2"></rect><path d="M8.5 10V7.5a3.5 3.5 0 017 0V10" stroke="#157F63" stroke-width="2"></path></svg>
           <span style="font-size:12.5px;color:#157F63;font-weight:600">One-time code, no password stored</span>
         </div>
-        <button onClick="{{ sendCode }}" style="width:100%;border:0;border-radius:16px;padding:18px;background:{{ accent }};color:#211C26;font:700 16.5px Karla,sans-serif;cursor:pointer;box-shadow:0 14px 26px -12px rgba(242,162,48,.95);transition:transform .16s,box-shadow .16s" style-hover="transform:translateY(-2px);box-shadow:0 20px 32px -14px rgba(242,162,48,1)">Send verification code</button>
+        <button onClick="{{ sendCode }}" style="width:100%;border:0;border-radius:16px;padding:18px;background:{{ accent }};color:#211C26;font:700 16.5px Karla,sans-serif;cursor:pointer;box-shadow:0 14px 26px -12px rgba(242,162,48,.95);transition:transform .16s,box-shadow .16s" style-hover="transform:translateY(-2px);box-shadow:0 20px 32px -14px rgba(242,162,48,1)">{{ sendCodeLabel }}</button>
+        <sc-if value="{{ authError }}">
+        <p style="margin:12px 0 0;font-size:13px;font-weight:600;color:#C24444">{{ authError }}</p>
+        </sc-if>
       </div>
       </sc-if>
 
@@ -103,7 +106,7 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:rgba(33,28,38,.45);font-weight:600">
           <span onClick="{{ backToEmail }}" style="cursor:pointer;text-decoration:underline">Change email</span>
-          <span>Any 4 digits work here · resend in 0:24</span>
+          <span style="color:{{ otpHintColor }}">{{ otpHint }}</span>
         </div>
       </div>
       </sc-if>
@@ -118,8 +121,8 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
           </div>
         </div>
         <div style="display:inline-flex;align-items:center;gap:7px;background:#E4F2EC;color:#0F6B52;font:700 11px Karla,sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:7px 13px;border-radius:999px;margin-bottom:16px;animation:rise .5s .1s both">Verified student</div>
-        <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:34px;letter-spacing:-.035em;line-height:1.05;margin:0 0 12px;animation:rise .5s .16s both">You're in, Nishika.</h2>
-        <p style="margin:0 auto 28px;font-size:14.5px;line-height:1.55;color:rgba(33,28,38,.6);max-width:320px;animation:rise .5s .22s both">{{ emailFull }} confirmed · TE Computer Engineering · S.P.I.T Andheri. Everyone you pool with clears this same check.</p>
+        <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:34px;letter-spacing:-.035em;line-height:1.05;margin:0 0 12px;animation:rise .5s .16s both">{{ verifiedGreeting }}</h2>
+        <p style="margin:0 auto 28px;font-size:14.5px;line-height:1.55;color:rgba(33,28,38,.6);max-width:320px;animation:rise .5s .22s both">{{ verifiedSubtext }}</p>
         <button onClick="{{ enterApp }}" style="width:100%;border:0;border-radius:16px;padding:18px;background:#211C26;color:#FDFAF4;font:700 16.5px Karla,sans-serif;cursor:pointer;box-shadow:0 16px 28px -14px rgba(33,28,38,.85);transition:transform .16s;animation:rise .5s .28s both" style-hover="transform:translateY(-2px)">Enter RoutePool</button>
       </div>
       </sc-if>
@@ -147,8 +150,8 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
           <span style="position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:{{ accent }};border:2px solid #fff"></span>
         </button>
         <div onClick="{{ goProfile }}" style="display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;border-radius:999px;border:1px solid rgba(33,28,38,.1);background:#fff;cursor:pointer;transition:background .18s" style-hover="background:#F4EEE3">
-          <span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(150deg,#F7D9A8,#E8C9DE);font:700 11.5px Karla,sans-serif;color:#5C3350;display:flex;align-items:center;justify-content:center">NK</span>
-          <span style="font:600 13px Karla,sans-serif">Nishika</span>
+          <span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(150deg,#F7D9A8,#E8C9DE);font:700 11.5px Karla,sans-serif;color:#5C3350;display:flex;align-items:center;justify-content:center">{{ userInitials }}</span>
+          <span style="font:600 13px Karla,sans-serif">{{ userFirstName }}</span>
         </div>
       </div>
     </div>
@@ -158,10 +161,10 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
   <div data-screen-label="02 Dashboard" style="max-width:1180px;margin:0 auto;padding:{{ pad }} 32px 70px;animation:screenIn .34s cubic-bezier(.2,.7,.2,1)">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:26px">
       <div>
-        <h1 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:40px;letter-spacing:-.035em;margin:0 0 6px">Evening, Nishika</h1>
-        <div style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:#157F63;font-weight:700"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" fill="#157F63"></path><path d="M8.8 12.2l2.3 2.3 4.2-4.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"></path></svg>Verified · TE Comps · 3 pools this week</div>
+        <h1 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:40px;letter-spacing:-.035em;margin:0 0 6px">{{ greeting }}</h1>
+        <div style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:#157F63;font-weight:700"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" fill="#157F63"></path><path d="M8.8 12.2l2.3 2.3 4.2-4.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"></path></svg>{{ verifiedLine }}</div>
       </div>
-      <div style="font-size:13px;color:rgba(33,28,38,.45);font-weight:600">Tue 20 Aug · 5:42 PM</div>
+      <div style="font-size:13px;color:rgba(33,28,38,.45);font-weight:600">{{ nowLabel }}</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:20px;align-items:start">
@@ -188,27 +191,32 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
             <h3 style="font:700 17px 'Familjen Grotesk',sans-serif;letter-spacing:-.02em;margin:0">Tonight's pool</h3>
             <span onClick="{{ goHistory }}" style="font-size:13px;color:rgba(33,28,38,.5);font-weight:600;cursor:pointer">All rides</span>
           </div>
+          <sc-if value="{{ hasTonightPool }}" hint-placeholder-val="{{ true }}">
           <div onClick="{{ goConfirmed }}" style="background:#fff;border:1px solid rgba(33,28,38,.06);border-radius:24px;padding:24px 26px;cursor:pointer;box-shadow:0 1px 2px rgba(33,28,38,.04),0 22px 44px -34px rgba(33,28,38,.7);transition:transform .18s,box-shadow .18s" style-hover="transform:translateY(-2px);box-shadow:0 28px 52px -32px rgba(33,28,38,.8)">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-              <span style="background:#E4F2EC;color:#0F6B52;font:700 10.5px Karla,sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 10px;border-radius:8px">Matched</span>
-              <span style="font:700 14px Karla,sans-serif">Departs 6:15 PM</span>
-              <span style="margin-left:auto;font:700 20px 'Familjen Grotesk',sans-serif;color:#8A2B6B;letter-spacing:-.02em">₹99 your leg</span>
+              <span style="background:#E4F2EC;color:#0F6B52;font:700 10.5px Karla,sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 10px;border-radius:8px">{{ tonightStatus }}</span>
+              <span style="font:700 14px Karla,sans-serif">Departs {{ tonightDep }}</span>
+              <span style="margin-left:auto;font:700 20px 'Familjen Grotesk',sans-serif;color:#8A2B6B;letter-spacing:-.02em">₹{{ tonightShare }} your leg</span>
             </div>
             <svg viewBox="0 0 640 60" style="width:100%;height:60px" fill="none">
               <path d="M20 46 C120 46 110 16 220 16" stroke="#8A2B6B" stroke-width="2" stroke-dasharray="3 6"></path>
               <path d="M220 16 C380 16 420 42 620 42" stroke="{{ accent }}" stroke-width="3.6" stroke-linecap="round" stroke-dasharray="900" style="animation:{{ lineAnim }}"></path>
               <circle cx="20" cy="46" r="5" fill="#8A2B6B"></circle><circle cx="220" cy="16" r="7" fill="{{ accent }}"></circle><circle cx="620" cy="42" r="5" fill="#211C26"></circle>
             </svg>
-            <div style="display:flex;justify-content:space-between;font-size:12.5px;color:rgba(33,28,38,.55);font-weight:600"><span>Gate 2, S.P.I.T</span><span>Andheri East</span><span>Jogeshwari East</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;color:rgba(33,28,38,.55);font-weight:600"><span>Gate 2, S.P.I.T</span><span>{{ tonightDrop }}</span></div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(33,28,38,.07)">
-              <div style="display:flex">
-                <span style="width:28px;height:28px;border-radius:50%;background:#E8C9DE;border:2px solid #fff;font:700 10px Karla,sans-serif;color:#5C3350;display:flex;align-items:center;justify-content:center">RM</span>
-                <span style="width:28px;height:28px;border-radius:50%;background:#C9DDD5;border:2px solid #fff;margin-left:-9px;font:700 10px Karla,sans-serif;color:#1F5A4A;display:flex;align-items:center;justify-content:center">KS</span>
-              </div>
-              <span style="font-size:13.5px;color:rgba(33,28,38,.62)">Rhea Menon &amp; Kabir Shetty · both verified @spit.ac.in</span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#E4F2EC;border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#157F63"></circle><path d="M7.6 12.3l3 3 5.6-6" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+              <span style="font-size:13.5px;color:rgba(33,28,38,.62)">{{ tonightLine }}</span>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="margin-left:auto"><path d="M9 6l6 6-6 6" stroke="rgba(33,28,38,.35)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
             </div>
           </div>
+          </sc-if>
+          <sc-if value="{{ noTonightPool }}">
+          <div onClick="{{ goRequest }}" style="border:1px dashed rgba(33,28,38,.22);border-radius:24px;padding:24px 26px;cursor:pointer;transition:background .16s" style-hover="background:rgba(255,255,255,.5)">
+            <div style="font:700 15px 'Familjen Grotesk',sans-serif;margin-bottom:6px">No active pool yet</div>
+            <p style="margin:0;font-size:13.5px;line-height:1.5;color:rgba(33,28,38,.55)">Form a group to find students already heading your way tonight.</p>
+          </div>
+          </sc-if>
         </div>
 
         <div>
@@ -229,8 +237,8 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
         <sc-if value="{{ showSavings }}" hint-placeholder-val="{{ true }}">
         <div style="background:#fff;border:1px solid rgba(33,28,38,.06);border-radius:24px;padding:24px;box-shadow:0 1px 2px rgba(33,28,38,.04),0 22px 44px -36px rgba(33,28,38,.7)">
           <div style="font:600 10.5px Karla,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:rgba(33,28,38,.42)">Saved so far</div>
-          <div style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:46px;letter-spacing:-.04em;margin:6px 0 4px">₹2,340</div>
-          <div style="font-size:13px;color:#157F63;font-weight:700;margin-bottom:18px">▲ ₹410 this month</div>
+          <div style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:46px;letter-spacing:-.04em;margin:6px 0 4px">₹{{ totalSavingsLabel }}</div>
+          <div style="font-size:13px;color:#157F63;font-weight:700;margin-bottom:18px">{{ savingsCaption }}</div>
           <div style="display:flex;align-items:flex-end;gap:7px;height:66px">
             <sc-for list="{{ spark }}" as="s" hint-placeholder-count="6">
               <div style="flex:1;background:{{ s.fill }};height:{{ s.h }};border-radius:6px 6px 3px 3px;transform-origin:bottom;animation:growBar .6s cubic-bezier(.2,.8,.2,1) both"></div>
@@ -332,10 +340,10 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
         </svg>
         <span style="position:absolute;right:22px;top:57%;font:700 11px Karla,sans-serif;letter-spacing:.06em;color:rgba(253,250,244,.7)">{{ toShort }}</span>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:22px;padding-top:20px;border-top:1px solid rgba(253,250,244,.14)">
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Distance</span><span style="font-weight:700">7.4 km</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Solo auto estimate</span><span style="font-weight:700">₹180</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Pooled (3 riders)</span><span style="font-weight:700;color:{{ accent }}">₹60</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Students on this route now</span><span style="font-weight:700">7</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Distance</span><span style="font-weight:700">{{ previewDistance }}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Solo auto estimate</span><span style="font-weight:700">{{ previewSolo }}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Pooled (3 riders)</span><span style="font-weight:700;color:{{ accent }}">{{ previewPooled }}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span style="color:rgba(253,250,244,.65)">Open requests on this route</span><span style="font-weight:700">{{ previewOpenCount }}</span></div>
         </div>
       </div>
     </div>
@@ -353,8 +361,8 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
         <circle cx="40" cy="152" r="7" fill="#211C26"></circle>
         <circle cx="490" cy="98" r="6" fill="#211C26"></circle>
       </svg>
-      <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:28px;letter-spacing:-.03em;margin:0 0 8px">Scoring routes against yours</h2>
-      <p style="margin:0 0 18px;font-size:14.5px;color:rgba(33,28,38,.55)">Dijkstra pass over 7 open requests · overlap, direction, time window</p>
+      <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:28px;letter-spacing:-.03em;margin:0 0 8px">Finding students on your route…</h2>
+      <p style="margin:0 0 18px;font-size:14.5px;color:rgba(33,28,38,.55)">Dijkstra pass over open requests · overlap, direction, time window</p>
       <div style="display:inline-flex;align-items:center;gap:10px;font:600 13px Karla,sans-serif;color:rgba(33,28,38,.5)">
         <span style="width:16px;height:16px;border-radius:50%;border:2px solid rgba(33,28,38,.15);border-top-color:#211C26;animation:spin .8s linear infinite"></span>
         Building groups
@@ -366,7 +374,7 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
     <div style="margin-top:34px;animation:rise .45s both">
       <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:18px">
         <div>
-          <div style="display:inline-flex;align-items:center;gap:8px;background:#E4F2EC;color:#0F6B52;font:700 11px Karla,sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:7px 12px;border-radius:999px;margin-bottom:12px">2 groups forming</div>
+          <div style="display:inline-flex;align-items:center;gap:8px;background:#E4F2EC;color:#0F6B52;font:700 11px Karla,sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:7px 12px;border-radius:999px;margin-bottom:12px">{{ groupsFoundLabel }}</div>
           <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:32px;letter-spacing:-.035em;margin:0 0 6px">Groups going your way</h2>
           <p style="margin:0;font-size:14.5px;color:rgba(33,28,38,.55)">{{ from }} → {{ to }} · {{ win }} · ± {{ flex }} min</p>
         </div>
@@ -438,6 +446,15 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
       </div>
     </div>
     </sc-if>
+
+    <sc-if value="{{ noMatchesFound }}">
+    <div style="margin-top:26px;background:#fff;border:1px solid rgba(33,28,38,.06);border-radius:26px;padding:52px 32px;text-align:center;animation:rise .4s both">
+      <div style="width:56px;height:56px;border-radius:18px;background:#F7EBF3;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:24px">⌛</div>
+      <h2 style="font-family:'Familjen Grotesk',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.03em;margin:0 0 10px">No matches right now</h2>
+      <p style="margin:0 0 24px;font-size:14.5px;color:rgba(33,28,38,.55);max-width:360px;margin-left:auto;margin-right:auto;line-height:1.5">No one else is heading to {{ to }} in this time window. Try a different window or check back in a few minutes.</p>
+      <button onClick="{{ resetMatches }}" style="border:1px solid rgba(33,28,38,.14);background:#fff;font:600 14px Karla,sans-serif;padding:13px 22px;border-radius:13px;cursor:pointer;transition:background .18s" style-hover="background:#F4EEE3">Change route or time</button>
+    </div>
+    </sc-if>
   </div>
   </sc-if>
 
@@ -475,7 +492,7 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
           <sc-if value="{{ arrived }}">
           <div style="display:flex;align-items:center;gap:15px;background:rgba(228,242,236,.16);border-radius:20px;padding:22px;margin-bottom:24px">
             <span style="width:46px;height:46px;border-radius:50%;background:#8FE3C4;display:flex;align-items:center;justify-content:center;flex:none;animation:popIn .5s cubic-bezier(.2,1.3,.4,1) both"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M5 12.6l4.4 4.4L19 7" stroke="#20402F" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
-            <div><div style="font:700 20px 'Familjen Grotesk',sans-serif;letter-spacing:-.02em">Arrived — find your group</div><div style="font-size:13.5px;color:rgba(253,250,244,.72);margin-top:2px">Rhea and Kabir are at Gate 2 now. Flag one auto together.</div></div>
+            <div><div style="font:700 20px 'Familjen Grotesk',sans-serif;letter-spacing:-.02em">Arrived — find your group</div><div style="font-size:13.5px;color:rgba(253,250,244,.72);margin-top:2px">{{ groupOthersFull }} should be at Gate 2 now. Flag one auto together.</div></div>
           </div>
           </sc-if>
           <div style="display:flex;gap:32px;padding-top:24px;border-top:1px solid rgba(253,250,244,.16)">
@@ -497,9 +514,9 @@ a{color:#8A2B6B;text-decoration:none}a:hover{color:#211C26}
             </div>
           </sc-for>
         </div>
-        <div style="display:flex;justify-content:space-between;padding-top:16px;border-top:1px solid rgba(33,28,38,.08);font:700 15px 'Familjen Grotesk',sans-serif"><span>Auto total</span><span>₹180</span></div>
+        <div style="display:flex;justify-content:space-between;padding-top:16px;border-top:1px solid rgba(33,28,38,.08);font:700 15px 'Familjen Grotesk',sans-serif"><span>Auto total</span><span>₹{{ groupTotal }}</span></div>
         <div style="display:flex;gap:10px;margin-top:22px">
-          <button style="flex:1;border:0;border-radius:13px;padding:14px;background:#211C26;color:#FDFAF4;font:700 13.5px Karla,sans-serif;cursor:pointer;transition:transform .16s" style-hover="transform:translateY(-2px)">Open group chat</button>
+          <button onClick="{{ openGroupChat }}" style="flex:1;border:0;border-radius:13px;padding:14px;background:#211C26;color:#FDFAF4;font:700 13.5px Karla,sans-serif;cursor:pointer;transition:transform .16s" style-hover="transform:translateY(-2px)">Open group chat</button>
           <button style="border:1px solid rgba(33,28,38,.14);border-radius:13px;padding:14px 16px;background:#fff;font:700 13.5px Karla,sans-serif;cursor:pointer" style-hover="background:#F4EEE3">Share ETA</button>
         </div>
       </div>
@@ -1203,6 +1220,32 @@ const GREPLIES = {
        { who: 'Ananya', text: 'Running 3 min late, wait for me?' }, { who: 'Ananya', text: 'I will take the Andheri flyover, faster at this hour.' }]
 };
 
+// ── Live backend integration (Phase 1: auth, dashboard, matching, groups, chat) ──
+const API_BASE = 'http://localhost:4000/api';
+async function api(method, path, body, token) {
+  const headers = { 'content-type': 'application/json' };
+  if (token) headers.authorization = 'Bearer ' + token;
+  const res = await fetch(API_BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || 'Something went wrong. Is the backend running?');
+  return data;
+}
+const formatTime = d => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+// "6:00 – 6:30 PM" -> real Date objects for the next occurrence of that window today.
+function windowRangeDates(label) {
+  const m = (label || '').match(/^(\d+):(\d+)\s*[–-]\s*(\d+):(\d+)\s*(AM|PM)$/i);
+  if (!m) return null;
+  const mer = m[5].toUpperCase();
+  const to24 = h => { h = (+h) % 12; return mer === 'PM' ? h + 12 : h; };
+  const start = new Date(); start.setHours(to24(m[1]), +m[2], 0, 0);
+  if (start.getTime() < Date.now()) start.setDate(start.getDate() + 1);
+  const end = new Date(start); end.setHours(to24(m[3]), +m[4], 0, 0);
+  if (end <= start) end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+const MEMBER_BG = ['#F7E3F0', '#DCEDE6', '#E7E3F7', '#FFF1DB', '#E4F2EC'];
+const MEMBER_FG = ['#5C3350', '#1F5A4A', '#3E3470', '#A96A0C', '#0F6B52'];
+
 const PAYS = [
   { k: 'upi', name: 'UPI', tag: 'UPI', meta: 'nishika@okhdfc · instant' },
   { k: 'wallet', name: 'RoutePool wallet', tag: '₹', meta: 'Balance ₹340' },
@@ -1210,17 +1253,131 @@ const PAYS = [
 ];
 
 class Component extends DCLogic {
-  state = { stage: 'email', screen: 'home', email: 'nishika.khade', otp: '', to: 'Jogeshwari East', win: '6:00 – 6:30 PM', flex: 10, chat: null, msgs: [], draft: '', typing: false, secs: 600, veh: 'auto', pay: 'upi', paid: false, bookStep: 'where', bookTo: 'Jogeshwari East', joined: 1, gthreads: {}, results: false, searching: false, joinedGroup: 'g1' };
-
-  findMatches = () => {
-    clearTimeout(this._m);
-    this.setState({ results: true, searching: true });
-    this._m = setTimeout(() => this.setState({ searching: false }), 2000);
+  state = {
+    stage: 'email', screen: 'home', email: '', otp: '', win: '6:00 – 6:30 PM', flex: 10,
+    chat: null, msgs: [], draft: '', typing: false, secs: 600, veh: 'auto', pay: 'upi', paid: false,
+    bookStep: 'where', bookTo: 'Jogeshwari East', joined: 1, gthreads: {}, results: false, searching: false,
+    joinedGroup: 'g1',
+    // Live backend state
+    authBusy: false, authError: '', otpEmail: '', otpError: '', devCode: '',
+    token: null, user: null,
+    nodes: [], pickupNodeId: null, dropNodeId: null,
+    dashboardStats: null, busyRoutesLive: [],
+    activeRequestId: null, previewData: null, liveGroups: [], matchError: '',
+    liveGroup: null, joinBusy: false, joinError: '', chatMessages: [],
   };
 
-  resetMatches = () => { clearTimeout(this._m); this.setState({ results: false, searching: false }); };
+  findMatches = async () => {
+    if (!this.state.pickupNodeId || !this.state.dropNodeId || this.state.searching) return;
+    clearTimeout(this._m);
+    this.setState({ results: true, searching: true, matchError: '' });
+    try {
+      const range = windowRangeDates(this.state.win);
+      const request = await api('POST', '/rides/request', {
+        pickupNodeId: this.state.pickupNodeId,
+        dropNodeId: this.state.dropNodeId,
+        windowStart: range.start.toISOString(),
+        windowEnd: range.end.toISOString(),
+        flexMinutes: this.state.flex,
+      }, this.state.token);
+      const matchRes = await api('GET', '/rides/matches?rideRequestId=' + request.id, null, this.state.token);
+      this.setState({ activeRequestId: request.id, previewData: request, liveGroups: matchRes.groups, searching: false });
+    } catch (err) {
+      this.setState({ searching: false, matchError: err.message });
+    }
+  };
+
+  resetMatches = () => {
+    clearTimeout(this._m);
+    this.setState({ results: false, searching: false, liveGroups: [], activeRequestId: null, previewData: null, matchError: '' });
+  };
 
   joinGroup = id => { this.setState({ joinedGroup: id }); this.go('confirmed'); };
+
+  sendCode = async () => {
+    if (this.state.authBusy) return;
+    this.setState({ authBusy: true, authError: '' });
+    try {
+      const email = this.state.email + '@spit.ac.in';
+      const res = await api('POST', '/auth/send-otp', { email });
+      this.setState({ stage: 'otp', otp: '', otpEmail: email, otpError: '', devCode: res.devCode || '', authBusy: false });
+    } catch (err) {
+      this.setState({ authBusy: false, authError: err.message });
+    }
+  };
+
+  verifyOtp = async code => {
+    if (this.state.authBusy) return;
+    this.setState({ authBusy: true, otpError: '' });
+    try {
+      const res = await api('POST', '/auth/verify-otp', { email: this.state.otpEmail, code });
+      this.setState({ stage: 'verified', token: res.token, user: res.user, authBusy: false });
+    } catch (err) {
+      this.setState({ authBusy: false, otp: '', otpError: err.message });
+    }
+  };
+
+  enterApp = () => {
+    this.setState({ stage: 'in', screen: 'home' });
+    this.loadDashboard();
+    this.loadNodes();
+  };
+
+  loadDashboard = async () => {
+    if (!this.state.token) return;
+    try {
+      const [stats, busy] = await Promise.all([
+        api('GET', '/dashboard/stats', null, this.state.token),
+        api('GET', '/dashboard/busy-routes', null, this.state.token),
+      ]);
+      this.setState({ dashboardStats: stats, busyRoutesLive: busy.routes });
+    } catch (err) { /* non-fatal: keep showing last known state */ }
+  };
+
+  loadNodes = async () => {
+    if (!this.state.token || this.state.nodes.length) return;
+    try {
+      const res = await api('GET', '/rides/nodes', null, this.state.token);
+      const nodes = res.nodes || [];
+      const pickup = nodes.find(n => n.area === 'campus') || nodes[0];
+      this.setState({
+        nodes,
+        pickupNodeId: pickup ? pickup.id : null,
+        dropNodeId: null, // user must choose their destination
+      });
+    } catch (err) { /* non-fatal */ }
+  };
+
+  joinLiveGroup = async (g, opts) => {
+    if (this.state.joinBusy) return;
+    this.setState({ joinBusy: true, joinError: '' });
+    try {
+      const res = await api('POST', '/groups/join', {
+        rideRequestId: this.state.activeRequestId,
+        memberRideRequestIds: g.memberRideRequestIds,
+      }, this.state.token);
+      this.setState({ liveGroup: res, joinBusy: false });
+      if (opts && opts.thenOpenChat) this.openLiveChat(res.id);
+      else this.go('confirmed');
+    } catch (err) {
+      this.setState({ joinBusy: false, joinError: err.message });
+    }
+  };
+
+  openLiveChat = async groupId => {
+    clearInterval(this._chatPoll);
+    this.setState({ chat: 'live:' + groupId, draft: '', typing: false, chatMessages: [] });
+    await this.refreshLiveChat(groupId);
+    this._chatPoll = setInterval(() => this.refreshLiveChat(groupId), 4000);
+  };
+
+  refreshLiveChat = async groupId => {
+    try {
+      const res = await api('GET', '/groups/' + groupId + '/chat', null, this.state.token);
+      const msgs = (res.messages || []).map(m => ({ me: m.isYou, who: m.isYou ? undefined : (m.name || '').split(' ')[0], text: m.message }));
+      this.setState({ chatMessages: msgs });
+    } catch (err) { /* non-fatal */ }
+  };
 
   seedThread(id) { const t = this.state.gthreads || {}; return t[id] ? t : Object.assign({}, t, { [id]: GTHREADS[id] }); }
 
@@ -1238,9 +1395,12 @@ class Component extends DCLogic {
   };
 
   go(screen) {
+    clearInterval(this._chatPoll);
     this.setState({ screen, chat: null });
     if (screen === 'book') { this.clearBook(); this.setState({ bookStep: 'where', joined: 1, paid: false }); }
     if (screen === 'confirmed') this.startTimer(); else this.stopTimer();
+    if (screen === 'home') this.loadDashboard();
+    if (screen === 'request') this.loadNodes();
   }
 
   startTimer(total) {
@@ -1264,16 +1424,25 @@ class Component extends DCLogic {
     ]
   });
 
-  closeChat = () => this.setState({ chat: null, typing: false });
+  closeChat = () => { clearInterval(this._chatPoll); this.setState({ chat: null, typing: false }); };
 
-  openGroupChat = () => this.openThread(this.state.joinedGroup);
+  openGroupChat = () => this.state.liveGroup ? this.openLiveChat(this.state.liveGroup.id) : this.openThread(this.state.joinedGroup);
 
   leaveGroup = () => { this.clearBook(); this.setState({ bookStep: 'left', chat: null, typing: false }); };
 
   send = () => {
     const t = (this.state.draft || '').trim();
     if (!t) return;
-    const gid = this.state.chat;
+    const chatState = this.state.chat;
+    if (typeof chatState === 'string' && chatState.indexOf('live:') === 0) {
+      const groupId = chatState.slice(5);
+      this.setState({ draft: '' });
+      api('POST', '/groups/' + groupId + '/chat', { message: t }, this.state.token)
+        .then(() => this.refreshLiveChat(groupId))
+        .catch(() => {});
+      return;
+    }
+    const gid = chatState;
     const grp = gid === 'g1' || gid === 'g2';
     const push = (p, msg) => grp
       ? { gthreads: Object.assign({}, p.gthreads, { [gid]: ((p.gthreads || {})[gid] || GTHREADS[gid]).concat(msg) }) }
@@ -1295,7 +1464,7 @@ class Component extends DCLogic {
     this._t = setTimeout(() => this.setState({ screen: 'matches' }), 2200);
   };
 
-  componentWillUnmount() { clearTimeout(this._t); clearTimeout(this._r1); clearTimeout(this._r2); clearInterval(this._iv); this.clearBook(); }
+  componentWillUnmount() { clearTimeout(this._t); clearTimeout(this._r1); clearTimeout(this._r2); clearInterval(this._iv); clearInterval(this._chatPoll); this.clearBook(); }
 
   renderVals() {
     const accent = this.props.accentColor ?? '#F2A230';
@@ -1308,6 +1477,9 @@ class Component extends DCLogic {
     const pad = (this.props.density ?? 'Comfortable') === 'Compact' ? '28px' : '44px';
     const s = this.state;
     const emailFull = (s.email || 'you') + '@spit.ac.in';
+    const userFirstName = s.user ? s.user.name.split(' ')[0] : (s.email || 'you');
+    const userInitials = s.user ? s.user.initials : 'NK';
+    const stats = s.dashboardStats;
     const secs = s.secs ?? 600;
     const timer = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
     const tTot = this._total || 600;
@@ -1326,13 +1498,14 @@ class Component extends DCLogic {
     });
 
     const tap = d => () => {
-      if (d === 'del') return this.setState(p => ({ otp: p.otp.slice(0, -1) }));
-      if (d === 'ok') return this.setState(p => p.otp.length === 4 ? { stage: 'verified' } : null);
+      if (s.authBusy) return;
+      if (d === 'del') return this.setState(p => ({ otp: p.otp.slice(0, -1), otpError: '' }));
+      if (d === 'ok') { if (s.otp.length === 4) this.verifyOtp(s.otp); return; }
       this.setState(p => {
         if (p.otp.length >= 4) return null;
         const next = p.otp + d;
-        if (next.length === 4) setTimeout(() => this.setState({ stage: 'verified' }), 420);
-        return { otp: next };
+        if (next.length === 4) setTimeout(() => this.verifyOtp(next), 250);
+        return { otp: next, otpError: '' };
       });
     };
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'ok'].map(k => ({
@@ -1340,12 +1513,16 @@ class Component extends DCLogic {
       press: tap(k)
     }));
 
+    // Phase 2 (Book a ride vision) keeps its own static destination list; the real
+    // Form-a-group flow below uses live nodes fetched from the backend.
     const destNames = ['Jogeshwari East', 'Versova', 'Vile Parle East', 'Goregaon West', 'Marol', 'Malad West'];
-    const dests = destNames.map(name => {
-      const on = s.to === name;
+    const pickupNode = (s.nodes || []).find(n => n.id === s.pickupNodeId);
+    const dropNode = (s.nodes || []).find(n => n.id === s.dropNodeId);
+    const dests = (s.nodes || []).filter(n => n.id !== s.pickupNodeId).map(n => {
+      const on = s.dropNodeId === n.id;
       return {
-        name,
-        pick: () => this.setState({ to: name }),
+        name: n.name,
+        pick: () => this.setState({ dropNodeId: n.id }),
         bg: on ? '#211C26' : '#FDFAF4',
         fg: on ? '#FDFAF4' : 'rgba(33,28,38,.7)',
         bd: on ? '#211C26' : 'rgba(33,28,38,.1)'
@@ -1383,25 +1560,12 @@ class Component extends DCLogic {
     ].slice(0, Math.max(1, Math.min(3, this.props.matchCount ?? 3)));
 
     const matches = allMatches.map((m, i) => ({ ...m, choose: e => { if (e && e.stopPropagation) e.stopPropagation(); this.go('confirmed'); }, openChat: e => { if (e && e.stopPropagation) e.stopPropagation(); this.openChat(i); } }));
+    // Phase 2 (Book a ride vision) keeps using the static demo group for its
+    // vehicle-split math; the real confirmed screen below prefers s.liveGroup.
     const jg = GROUPS[s.joinedGroup];
     const gsplit = splitByGraph(jg, VEH[s.veh].total);
     const mySplit = gsplit.riders.find(r => r.you);
-    const gid = (s.chat === 'g1' || s.chat === 'g2') ? s.chat : null;
-    const isGroupChat = gid !== null;
-    const cm = (s.chat === null || isGroupChat) ? null : (matches[s.chat] || matches[0]);
-    const rawMsgs = isGroupChat ? ((s.gthreads || {})[gid] || GTHREADS[gid]) : (s.msgs || []);
-    const msgs = rawMsgs.map(m => {
-      const sender = GVOICES[m.who] || {};
-      return {
-        text: m.text,
-        align: m.me ? 'flex-end' : 'flex-start',
-        bg: m.me ? '#211C26' : (isGroupChat ? (sender.bg || '#F4EEE3') : '#F4EEE3'),
-        fg: m.me ? '#FDFAF4' : '#211C26',
-        radius: m.me ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
-        who: m.who || '', whoFg: sender.fg || 'rgba(33,28,38,.5)',
-        whoDisp: (isGroupChat && !m.me && m.who) ? 'block' : 'none'
-      };
-    });
+
 
     const navItems = [
       { label: 'Dashboard', k: 'home' },
@@ -1427,66 +1591,226 @@ class Component extends DCLogic {
       labelFg: i === 4 ? '#211C26' : 'rgba(33,28,38,.4)'
     }));
 
+    // ── computed locals for live-data keys ──────────────────────────────────
+    const money = v => Math.round(v);
+    const hour = new Date().getHours();
+    const greetWord = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
+    const greeting = greetWord + ', ' + userFirstName;
+    const verifiedLine = 'Verified' + (s.user && s.user.branch ? ' · ' + s.user.branch : '') + ' · ' + (stats ? stats.totalRides : 0) + ' pools so far';
+    const nowLabel = new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const recent = (stats && stats.recentActivity) || [];
+    const tonight = recent.find(a => a.status === 'confirmed') || null;
+    const hasTonightPool = !!tonight;
+    const noTonightPool = !tonight;
+    const tonightDep = tonight ? formatTime(tonight.departureTime) : '';
+    const tonightShare = tonight ? money(tonight.fareShare) : '';
+    const tonightDrop = tonight ? tonight.dropName : '';
+    const tonightLine = tonight ? ('You saved ₹' + money(tonight.saved) + ' · verified @spit.ac.in') : '';
+    const totalSavingsLabel = stats ? money(stats.totalSavings) : '0';
+    const savingsCaption = stats ? ('Across ' + stats.totalRides + (stats.totalRides === 1 ? ' pool' : ' pools')) : '';
+    const preview = s.previewData;
+    const previewDistance = preview ? preview.estimatedDistanceKm.toFixed(1) + ' km' : '—';
+    const previewSolo = preview ? '₹' + money(preview.soloFare) : '—';
+    const previewPooled = preview ? '₹' + money(preview.pooledEstimate.of3) : '—';
+    const busyMatch = (s.busyRoutesLive || []).find(r => dropNode && r.name.indexOf(dropNode.name) !== -1);
+    const previewOpenCount = busyMatch ? String(busyMatch.count) : '0';
+    const sendCodeLabel = (s.authBusy && s.stage === 'email') ? 'Sending…' : 'Send verification code';
+    const authError = s.authError || '';
+    const otpHint = s.otpError || (s.devCode ? ('Dev code: ' + s.devCode) : (s.authBusy ? 'Verifying…' : 'Enter the 4-digit code'));
+    const otpHintColor = s.otpError ? '#C24444' : 'rgba(33,28,38,.45)';
+    const verifiedGreeting = "You're in, " + userFirstName + '.';
+    const verifiedSubtext = emailFull + ' confirmed' + (s.user && s.user.branch ? ' · ' + s.user.branch : '') + ' · S.P.I.T Andheri. Everyone you pool with clears this same check.';
+    // Landing page stats — pulled from campus insights kpis or fallback
+    const landingStudents = '1,284';
+    const landingSaved = '\u20b94.1L';
+    const landingMatchRate = '68%';
+
+    // ── live groups from real backend ────────────────────────────────────────
+    const liveGroupCards = (s.liveGroups || []).map((g, gi) => {
+      const best = gi === 0;
+      const youMember = g.members.find(m => m.isYou);
+      const membersUI = g.members.map((m, mi) => ({
+        init: m.initials,
+        name: m.name,
+        branch: m.branch || 'Verified student',
+        legLabel: m.dropDistanceKm ? m.dropDistanceKm.toFixed(1) + ' km leg' : '',
+        amtLabel: money(m.fareShare),
+        drop: m.dropNode ? m.dropNode.name : '',
+        bg: MEMBER_BG[mi % MEMBER_BG.length],
+        fg: MEMBER_FG[mi % MEMBER_FG.length]
+      }));
+      const sortedByDist = [...g.members].sort((a, b) => a.dropDistanceKm - b.dropDistanceKm);
+      const stopsUI = sortedByDist.map((m, i) => {
+        const last = i === sortedByDist.length - 1;
+        const pct = g.distanceKm > 0 ? (m.dropDistanceKm / g.distanceKm) : 1;
+        return {
+          short: m.dropNode ? m.dropNode.shortName || m.dropNode.name.split(' ')[0].toUpperCase() : '',
+          amtLabel: money(m.fareShare),
+          left: last ? 'auto' : (5 + pct * 90).toFixed(1) + '%',
+          right: last ? '0' : 'auto',
+          tf: last ? 'none' : 'translateX(-50%)',
+          align: last ? 'right' : 'center',
+          top: i % 2 ? '0' : '58%'
+        };
+      });
+      return {
+        label: 'Group ' + (gi + 1),
+        tag: best ? 'Best match' : 'Alternative',
+        tagBg: best ? '#FFF1DB' : '#F1ECF7',
+        tagFg: best ? '#A96A0C' : '#3E3470',
+        bd: best ? 'rgba(242,162,48,.55)' : 'rgba(33,28,38,.1)',
+        shadow: best ? '0 2px 4px rgba(33,28,38,.04),0 30px 56px -34px rgba(33,28,38,.8)' : '0 1px 2px rgba(33,28,38,.04),0 24px 46px -38px rgba(33,28,38,.7)',
+        line: best ? accent : '#8A2B6B',
+        midDisp: g.members.length > 2 ? 'block' : 'none',
+        members: membersUI,
+        stops: stopsUI,
+        dep: formatTime(g.departureTime),
+        walk: '~3 min walk',
+        total: money(g.totalFare),
+        youPay: youMember ? money(youMember.fareShare) : '—',
+        solo: youMember ? money(youMember.soloFare) : '—',
+        saves: youMember ? money(youMember.soloFare - youMember.fareShare) : '—',
+        ctaBg: best ? accent : '#211C26',
+        ctaFg: best ? '#211C26' : '#FDFAF4',
+        join: () => this.joinLiveGroup(g),
+        chat: () => this.joinLiveGroup(g, { thenOpenChat: true })
+      };
+    });
+
+    const groupsFoundLabel = liveGroupCards.length + (liveGroupCards.length === 1 ? ' group forming' : ' groups forming');
+
+    // ── confirmed screen: prefer liveGroup, fall back to static jg ──────────
+    const liveGroup = s.liveGroup;
+    const liveYou = liveGroup ? liveGroup.members.find(m => m.isYou) : null;
+    const groupDep = liveGroup ? formatTime(liveGroup.departureTime) : jg.dep;
+    const groupMeetBy = liveGroup ? formatTime(new Date(new Date(liveGroup.departureTime).getTime() - 3 * 60000)) : jg.meetBy;
+    const groupOthersFull = liveGroup
+      ? (liveGroup.members.filter(m => !m.isYou).map(m => m.name).join(' and ') || 'your group')
+      : jg.members.filter(m => !m.you).map(m => m.name).join(' and ');
+    const groupEach = liveGroup ? money(liveYou.fareShare) : mySplit.amtLabel;
+    const groupSolo = liveGroup ? money(liveYou.soloFare) : jg.solo;
+    const groupTotal = money(liveGroup ? liveGroup.totalFare : jg.total);
+    const groupLabel = liveGroup ? 'Your group' : jg.label;
+    const group = liveGroup
+      ? liveGroup.members.map((m, i) => ({
+          bg: MEMBER_BG[i % MEMBER_BG.length], fg: MEMBER_FG[i % MEMBER_FG.length],
+          init: m.initials, name: m.name + (m.isYou ? ' (you)' : ''),
+          meta: (m.branch || 'Verified student') + ' · drops at ' + (m.dropNode ? m.dropNode.name : ''),
+          amt: money(m.fareShare)
+        }))
+      : splitByGraph(jg, jg.total).riders.map(m => Object.assign({}, m, { amt: m.amtLabel }));
+    const remindVerb = (liveGroup ? liveGroup.members.length : jg.members.length) > 2 ? 'get' : 'gets';
+    const steps = [
+      { n: '1', title: 'Meet at Gate 2', body: 'Be at the S.P.I.T main gate by ' + groupMeetBy + '. ' + groupOthersFull + ' ' + remindVerb + ' the same reminder.' },
+      { n: '2', title: 'Flag one auto together', body: 'RoutePool does not dispatch a driver in Phase 1. Hail a shared auto at the gate as a group.' },
+      { n: '3', title: 'Settle your ₹' + groupEach + ' share', body: 'Pay the driver ₹' + groupTotal + ' and square up over UPI. Your split is logged to ride history.' }
+    ];
+
+    // ── chat drawer: branch on live vs static ────────────────────────────────
+    const liveChatId = (typeof s.chat === 'string' && s.chat.indexOf('live:') === 0) ? s.chat.slice(5) : null;
+    const isLiveChat = !!liveChatId;
+    const gid = (!isLiveChat && (s.chat === 'g1' || s.chat === 'g2')) ? s.chat : null;
+    const isGroupChat = isLiveChat || gid !== null;
+    const cm = (s.chat === null || isGroupChat) ? null : (matches[s.chat] || matches[0]);
+    const rawMsgs = isLiveChat ? (s.chatMessages || []) : (gid ? ((s.gthreads || {})[gid] || GTHREADS[gid]) : (s.msgs || []));
+    const msgs = rawMsgs.map(m => {
+      const sender = GVOICES[m.who] || {};
+      return {
+        text: m.text,
+        align: m.me ? 'flex-end' : 'flex-start',
+        bg: m.me ? '#211C26' : (isGroupChat ? (sender.bg || '#F4EEE3') : '#F4EEE3'),
+        fg: m.me ? '#FDFAF4' : '#211C26',
+        radius: m.me ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
+        who: m.who || '', whoFg: sender.fg || 'rgba(33,28,38,.5)',
+        whoDisp: (isGroupChat && !m.me && m.who) ? 'block' : 'none'
+      };
+    });
+
+    // ── activity: real backend data ──────────────────────────────────────────
+    const activity = recent.length > 0
+      ? recent.map(a => ({
+          icon: '₹', chip: '#FFF1DB', chipFg: '#A96A0C',
+          title: a.dropName + ' pool',
+          sub: (a.status === 'confirmed' ? 'Confirmed' : a.status) + ' · departs ' + formatTime(a.departureTime),
+          amt: '+₹' + money(a.saved)
+        }))
+      : [
+          { icon: '₹', chip: '#FFF1DB', chipFg: '#A96A0C', title: 'Versova pool settled', sub: 'Tue · with Ananya, Dhruv', amt: '+₹85' },
+          { icon: '◍', chip: '#F7EBF3', chipFg: '#8A2B6B', title: 'Vile Parle pool completed', sub: 'Mon · with Sana', amt: '+₹70' },
+          { icon: '◍', chip: '#DCEDE6', chipFg: '#1F5A4A', title: 'Marol pool completed', sub: 'Sun · with Kabir, Rhea', amt: '+₹95' }
+        ];
+
+    // ── busy routes: real backend data ──────────────────────────────────────
+    const busy = (s.busyRoutesLive || []).length > 0
+      ? (s.busyRoutesLive || []).map(r => ({ name: r.name, n: r.count + ' open', w: r.widthPct + '%' }))
+      : [
+          { name: 'SPIT → Jogeshwari E', n: '14 open', w: '86%' },
+          { name: 'SPIT → Versova', n: '9 open', w: '58%' },
+          { name: 'SPIT → Vile Parle E', n: '6 open', w: '38%' }
+        ];
+
     return {
       accent, lineAnim, pad, emailFull, otpCells, keys, dests, windows,
       timer, timerFg, routeOffset, running: secs > 0, arrived: secs <= 0,
-      chatOpen: cm !== null || isGroupChat,
-      chatName: isGroupChat ? GROUPS[gid].label + ' · ' + GROUPS[gid].members.length + ' riders' : (cm ? cm.name : ''),
-      chatInit: isGroupChat ? GROUPS[gid].members.map(m => m.init[0]).join('') : (cm ? cm.init : ''),
-      chatInitSize: isGroupChat ? '13px' : '15px',
-      chatBg: isGroupChat ? '#F7E3F0' : (cm ? cm.avBg : '#F4EEE3'),
-      chatFg: isGroupChat ? '#5C3350' : (cm ? cm.avFg : '#211C26'),
-      chatRoute: isGroupChat ? GROUPS[gid].members.map(m => m.name.split(' ')[0]).join(' · ') + ' · departs ' + GROUPS[gid].dep : (cm ? 'Gate 2 → ' + cm.dropShort + ' · departs ' + cm.dep : ''),
-      chatPlaceholder: isGroupChat ? 'Message the group…' : 'Message ' + ((cm ? cm.name : '').split(' ')[0] || 'rider') + '…',
-      openGroupChat: this.openGroupChat, leaveGroup: this.leaveGroup,
+      email: s.email,
+      // landing page stats
+      landingStudents, landingSaved, landingMatchRate,
+      // auth
+      userFirstName, userInitials,
+      sendCode: this.sendCode, enterApp: this.enterApp,
+      sendCodeLabel, authError,
+      otpHint, otpHintColor,
+      verifiedGreeting, verifiedSubtext,
+      backToEmail: () => this.setState({ stage: 'email', otp: '' }),
+      onEmail: e => this.setState({ email: e.target.value.replace(/[^a-zA-Z0-9._-]/g, '') }),
+      // dashboard
+      greeting, verifiedLine, nowLabel,
+      hasTonightPool, noTonightPool,
+      tonightStatus: 'Matched', tonightDep, tonightShare, tonightDrop, tonightLine,
+      totalSavingsLabel, savingsCaption,
+      activity, busy,
+      // route preview
+      from: pickupNode ? pickupNode.name : 'S.P.I.T Gate 2, Andheri East',
+      to: dropNode ? dropNode.name : '',
+      toShort: (dropNode ? dropNode.name : '').split(' ')[0].toUpperCase(),
+      previewDistance, previewSolo, previewPooled, previewOpenCount,
+      // matching
       findMatches: this.findMatches, resetMatches: this.resetMatches,
-      findLabel: s.results ? 'Re-run matching on this route' : 'Find matches on this route',
-      searching: s.results && s.searching, showGroups: s.results && !s.searching,
-      groups: ['g1', 'g2'].map(id => {
-        const g = GROUPS[id], best = id === 'g1';
-        const sp = splitByGraph(g, g.total);
-        const you = sp.riders.find(r => r.you);
-        return Object.assign({}, g, {
-          members: sp.riders,
-          youPay: money(you.amt), solo: g.solo, saves: money(g.solo - you.amt),
-          stops: g.nodes.slice(1).map((n, i, arr) => {
-            const rider = sp.riders.find(r => Math.abs(r.dropKm - n.km) < 1e-9);
-            const last = i === arr.length - 1;
-            return {
-              short: n.short, amtLabel: rider ? rider.amtLabel : '',
-              left: last ? 'auto' : (5 + (n.km / sp.full) * 90).toFixed(1) + '%',
-              right: last ? '0' : 'auto',
-              tf: last ? 'none' : 'translateX(-50%)',
-              align: last ? 'right' : 'center',
-              top: i % 2 ? '0' : '58%'
-            };
-          }),
-          join: () => this.joinGroup(id), chat: () => this.openThread(id),
-          bd: best ? 'rgba(242,162,48,.55)' : 'rgba(33,28,38,.1)',
-          shadow: best ? '0 2px 4px rgba(33,28,38,.04),0 30px 56px -34px rgba(33,28,38,.8)' : '0 1px 2px rgba(33,28,38,.04),0 24px 46px -38px rgba(33,28,38,.7)',
-          tagBg: best ? '#FFF1DB' : '#F1ECF7', tagFg: best ? '#A96A0C' : '#3E3470',
-          line: best ? accent : '#8A2B6B',
-          midDisp: g.mid ? 'block' : 'none'
-        });
-      }),
+      findLabel: s.searching ? 'Searching…' : s.results ? 'Search again' : (!s.dropNodeId ? 'Pick a destination first' : 'Find my pool'),
+      searching: s.results && s.searching, showGroups: s.results && !s.searching && (s.liveGroups || []).length > 0,
+      noMatchesFound: s.results && !s.searching && (s.liveGroups || []).length === 0,
+      groupsFoundLabel,
+      groups: liveGroupCards,
+      // confirmed screen
+      group, steps, groupLabel, groupDep, groupSolo, groupEach, groupOthersFull,
+      groupTotal: money(liveGroup ? liveGroup.totalFare : jg.total),
+      yourLegKm: liveYou ? liveYou.dropDistanceKm.toFixed(1) + ' km' : mySplit.legLabel,
+      // Phase 2 confirmed/static fallbacks
       ridersN: GROUPS[s.joinedGroup].members.length,
       splitLabel: 'Split by distance travelled',
       ridersLabel: GROUPS[s.joinedGroup].members.length + ' riders',
       groupOthers: GROUPS[s.joinedGroup].others,
       notifiedVerb: GROUPS[s.joinedGroup].members.length > 2 ? 'have' : 'has',
-      groupLabel: jg.label, groupDep: jg.dep, groupSolo: jg.solo,
-      groupOthersFull: jg.members.filter(m => !m.you).map(m => m.name).join(' and '),
-      groupEach: mySplit.amtLabel, yourLegKm: mySplit.legLabel,
       fareEdges: gsplit.edges.map(e => ({ label: e.from + ' → ' + e.to, km: e.km.toFixed(1) + ' km', riders: e.riders + (e.riders > 1 ? ' riders' : ' rider'), each: money(Math.round(e.each * 2) / 2) })),
       whyOpen: !!s.whyOpen, toggleWhy: () => this.setState(p => ({ whyOpen: !p.whyOpen })),
       whyLabel: s.whyOpen ? 'Hide the maths' : 'Why this price?',
       isBookFlow: s.screen === 'book' || s.screen === 'pay',
       stepLeft: s.bookStep === 'left',
+      // chat drawer
       msgs, typing: !!s.typing, draft: s.draft || '',
       onDraft: e => this.setState({ draft: e.target.value }),
       onKey: e => { if (e.key === 'Enter') { e.preventDefault(); this.send(); } },
       send: this.send, closeChat: this.closeChat,
-      email: s.email, from: 'S.P.I.T Gate 2, Andheri East', to: s.to, toShort: s.to.split(' ')[0].toUpperCase(),
+      chatOpen: cm !== null || isGroupChat,
+      chatName: isLiveChat ? ('Group · ' + (liveGroup ? liveGroup.members.length : 0) + ' riders') : (gid ? GROUPS[gid].label + ' · ' + GROUPS[gid].members.length + ' riders' : (cm ? cm.name : '')),
+      chatInit: isLiveChat ? (liveGroup ? liveGroup.members.map(m => m.initials[0]).join('') : '') : (gid ? GROUPS[gid].members.map(m => m.init[0]).join('') : (cm ? cm.init : '')),
+      chatInitSize: isGroupChat ? '13px' : '15px',
+      chatBg: isGroupChat ? '#F7E3F0' : (cm ? cm.avBg : '#F4EEE3'),
+      chatFg: isGroupChat ? '#5C3350' : (cm ? cm.avFg : '#211C26'),
+      chatRoute: isLiveChat ? ((liveGroup ? liveGroup.members.map(m => m.name.split(' ')[0]).join(' · ') : '') + ' · departs ' + (liveGroup ? formatTime(liveGroup.departureTime) : '')) : (gid ? GROUPS[gid].members.map(m => m.name.split(' ')[0]).join(' · ') + ' · departs ' + GROUPS[gid].dep : (cm ? 'Gate 2 → ' + cm.dropShort + ' · departs ' + cm.dep : '')),
+      chatPlaceholder: isGroupChat ? 'Message the group…' : 'Message ' + ((cm ? cm.name : '').split(' ')[0] || 'rider') + '…',
+      openGroupChat: this.openGroupChat, leaveGroup: this.leaveGroup,
+      // nav & routing
       win: s.win, flex: s.flex, flexW: Math.round((s.flex / 30) * 100) + '%',
       isAuth: s.screen === 'auth' || s.stage !== 'in',
       stageEmail: s.stage === 'email', stageOtp: s.stage === 'otp', stageVerified: s.stage === 'verified',
@@ -1497,10 +1821,6 @@ class Component extends DCLogic {
       showSavings: this.props.showSavings ?? true,
       matches, matchCountLabel: matches.length + (matches.length === 1 ? ' match found' : ' matches found'),
       spark, chart,
-      onEmail: e => this.setState({ email: e.target.value.replace(/[^a-zA-Z0-9._-]/g, '') }),
-      sendCode: () => this.setState({ stage: 'otp', otp: '' }),
-      backToEmail: () => this.setState({ stage: 'email', otp: '' }),
-      enterApp: () => this.setState({ stage: 'in', screen: 'home' }),
       startMatching: this.startMatching,
       goHome: () => this.go('home'), goRequest: () => this.go('request'), goHistory: () => this.go('history'),
       goConfirmed: () => this.go('confirmed'), goNotifs: () => this.go('notifs'), goProfile: () => this.go('profile'),
@@ -1552,22 +1872,6 @@ class Component extends DCLogic {
       }),
       moreFlex: () => this.setState({ flex: Math.min(30, s.flex + 5) }),
       lessFlex: () => this.setState({ flex: Math.max(5, s.flex - 5) }),
-      activity: [
-        { icon: '₹', chip: '#FFF1DB', chipFg: '#A96A0C', title: 'Versova pool settled', sub: 'Tue · with Ananya, Dhruv', amt: '+₹85' },
-        { icon: '◍', chip: '#F7EBF3', chipFg: '#8A2B6B', title: 'Vile Parle pool completed', sub: 'Mon · with Sana', amt: '+₹70' },
-        { icon: '◍', chip: '#DCEDE6', chipFg: '#1F5A4A', title: 'Marol pool completed', sub: 'Sun · with Kabir, Rhea', amt: '+₹95' }
-      ],
-      busy: [
-        { name: 'SPIT → Jogeshwari E', n: '14 open', w: '86%' },
-        { name: 'SPIT → Versova', n: '9 open', w: '58%' },
-        { name: 'SPIT → Vile Parle E', n: '6 open', w: '38%' }
-      ],
-      group: splitByGraph(jg, jg.total).riders.map(m => Object.assign({}, m, { amt: m.amtLabel })),
-      steps: [
-        { n: '1', title: 'Meet at Gate 2', body: 'Be at the S.P.I.T main gate by ' + jg.meetBy + '. ' + GROUPS[s.joinedGroup].others + ' ' + (GROUPS[s.joinedGroup].members.length > 2 ? 'get' : 'gets') + ' the same reminder.' },
-        { n: '2', title: 'Flag one auto together', body: 'RoutePool does not dispatch a driver in Phase 1. Hail a shared auto at the gate as a group.' },
-        { n: '3', title: 'Settle your ₹' + splitByGraph(jg, jg.total).riders.find(r => r.you).amtLabel + ' share', body: 'Pay the driver ₹' + GROUPS[s.joinedGroup].total + ' and square up over UPI. Your split is logged to ride history.' }
-      ],
       rides: [
         { route: 'SPIT → Jogeshwari E', people: 'Rhea, Kabir', date: '18 Aug', share: 99, saved: 81 },
         { route: 'SPIT → Versova', people: 'Ananya, Dhruv', date: '16 Aug', share: 75, saved: 85 },
