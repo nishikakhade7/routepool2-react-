@@ -1,38 +1,69 @@
 const userModel = require('../../models/user.model');
 const rideRequestModel = require('../../models/rideRequest.model');
-const { pool } = require('../../config/db');
 const ApiError = require('../../utils/ApiError');
+
+const USE_MOCK = process.env.USE_MOCK_DB === 'true';
 
 async function getStats(userId) {
   const user = await userModel.findById(userId);
   if (!user) throw ApiError.notFound('User not found');
 
-  const { rows: activity } = await pool.query(
-    `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
-            dn.name AS drop_name, dn.short_name AS drop_short, rr.solo_fare
-     FROM group_members gm
-     JOIN groups g ON g.id = gm.group_id
-     JOIN ride_requests rr ON rr.id = gm.ride_request_id
-     JOIN nodes dn ON dn.id = gm.drop_node_id
-     WHERE gm.user_id = $1
-     ORDER BY g.departure_time DESC
-     LIMIT 5`,
-    [userId]
-  );
+  let recentActivity = [];
+
+  if (USE_MOCK) {
+    // Build recent activity entirely in-memory from the mock store's raw tables
+    const { _db } = require('../../db/mockStore');
+    const myMembers = _db.groupMembers
+      .filter(m => m.user_id === userId)
+      .slice(0, 5);
+
+    recentActivity = myMembers.map(m => {
+      const g  = _db.groups.find(g => g.id === m.group_id) || {};
+      const dn = _db.nodes.find(n => n.id === m.drop_node_id) || {};
+      const rr = _db.rideRequests.find(r => r.id === m.ride_request_id) || {};
+      const fareShare = Number(m.fare_share);
+      const soloFare  = Number(rr.solo_fare || 0);
+      return {
+        groupId:       g.id,
+        dropName:      dn.name,
+        dropShort:     dn.short_name,
+        departureTime: g.departure_time,
+        status:        g.status,
+        fareShare,
+        soloFare,
+        saved: +(soloFare - fareShare).toFixed(2),
+      };
+    }).filter(a => a.groupId);
+  } else {
+    const { pool } = require('../../config/db');
+    const { rows: activity } = await pool.query(
+      `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
+              dn.name AS drop_name, dn.short_name AS drop_short, rr.solo_fare
+       FROM group_members gm
+       JOIN groups g ON g.id = gm.group_id
+       JOIN ride_requests rr ON rr.id = gm.ride_request_id
+       JOIN nodes dn ON dn.id = gm.drop_node_id
+       WHERE gm.user_id = $1
+       ORDER BY g.departure_time DESC
+       LIMIT 5`,
+      [userId]
+    );
+    recentActivity = activity.map((a) => ({
+      groupId:       a.group_id,
+      dropName:      a.drop_name,
+      dropShort:     a.drop_short,
+      departureTime: a.departure_time,
+      status:        a.status,
+      fareShare:     Number(a.fare_share),
+      soloFare:      Number(a.solo_fare),
+      saved: +(Number(a.solo_fare) - Number(a.fare_share)).toFixed(2),
+    }));
+  }
 
   return {
-    totalRides: user.total_rides,
-    totalSavings: Number(user.total_savings),
-    recentActivity: activity.map((a) => ({
-      groupId: a.group_id,
-      dropName: a.drop_name,
-      dropShort: a.drop_short,
-      departureTime: a.departure_time,
-      status: a.status,
-      fareShare: Number(a.fare_share),
-      soloFare: Number(a.solo_fare),
-      saved: +(Number(a.solo_fare) - Number(a.fare_share)).toFixed(2),
-    })),
+    totalRides:     user.total_rides,
+    totalSavings:   Number(user.total_savings),
+    recentActivity,
   };
 }
 
@@ -40,9 +71,9 @@ async function getBusyRoutes() {
   const rows = await rideRequestModel.busyRoutes(5);
   const max = Math.max(1, ...rows.map((r) => r.count));
   return rows.map((r) => ({
-    name: `${r.pickupName} → ${r.dropName}`,
+    name:     `${r.pickupName} → ${r.dropName}`,
     dropShort: r.dropShort,
-    count: r.count,
+    count:    r.count,
     widthPct: Math.round((r.count / max) * 100),
   }));
 }

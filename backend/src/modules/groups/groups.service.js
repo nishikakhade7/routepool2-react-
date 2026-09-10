@@ -1,4 +1,4 @@
-const { withTransaction } = require('../../config/db');
+const { withTransaction } = process.env.USE_MOCK_DB === 'true' ? require('../../db/mockStore') : require('../../config/db');
 const groupModel = require('../../models/group.model');
 const groupMemberModel = require('../../models/groupMember.model');
 const rideRequestModel = require('../../models/rideRequest.model');
