@@ -11,4 +11,14 @@ const getBusyRoutes = asyncHandler(async (req, res) => {
   res.json({ routes });
 });
 
-module.exports = { getStats, getBusyRoutes };
+const getHistory = asyncHandler(async (req, res) => {
+  const history = await dashboardService.getHistory(req.user.id);
+  res.json({ history });
+});
+
+const getCampusStats = asyncHandler(async (req, res) => {
+  const stats = await dashboardService.getCampusStats();
+  res.json(stats);
+});
+
+module.exports = { getStats, getBusyRoutes, getHistory, getCampusStats };
