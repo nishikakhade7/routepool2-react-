@@ -1,24 +1,47 @@
-# RoutePool
+# RoutePool — React + Express Ride-Pooling App
 
-A smart, graph-based ride-sharing platform for college students. Matches verified 
-students traveling similar routes using a Dijkstra-based algorithm, and splits fares 
-proportionally by distance travelled.
+## Quick Start (No PostgreSQL needed)
 
-Built as a Software Engineering capstone project at S.P.I.T, Mumbai.
+### Terminal 1 — Backend
+```bash
+cd backend
+npm install
+npm run dev
+# Backend starts on http://localhost:4000
+```
 
-## Structure
+### Terminal 2 — Frontend
+```bash
+cd frontend-react
+npm install
+npm run dev
+# Frontend starts on http://localhost:5173
+```
 
-- **Part 1 — Meetup**: peer-matching MVP (current focus, fully functional design)
-- **Part 2 — Book a Ride**: future vision for in-app cab/rickshaw booking
+Open **http://localhost:5173** in your browser.
 
-## Tech Stack
+---
 
-Frontend: HTML/CSS/JS · Backend: Node.js/Express (in progress) · DB: PostgreSQL + PostGIS
+## Login Flow
+1. Enter your SPIT email username (the part before `@spit.ac.in`)
+2. Click **Send verification code**
+3. A yellow dev-hint box will show the OTP code (e.g. `Dev OTP: 1234`)
+4. Enter the code using the on-screen numpad
+5. Click ✓ to verify
 
-## Run locally
+**Pre-seeded test accounts:**
+- `nishika.khade` (Nishika Khade)
+- `rhea.menon` (Rhea Menon)
+- `kabir.shetty` (Kabir Shetty)
+- `ananya.deshpande` (Ananya Deshpande)
 
-Open `design/RoutePool.dc.html` with VS Code's Live Server extension.
+---
 
-## Team
+## Architecture
+- **Frontend**: React 19 + Vite + React Router 7 (`frontend-react/`)
+- **Backend**: Express 4 + Zod validation (`backend/`)
+- **Database**: In-memory mock (no PostgreSQL needed with `USE_MOCK_DB=true`)
 
-Nishika Khade · Vaishnavi Thore · Namish Jain — Guide: Kirti Chaudhari
+## Configuration
+The `backend/.env` file has `USE_MOCK_DB=true` which enables the in-memory database.  
+To use a real PostgreSQL database, set `USE_MOCK_DB=false` and update `DATABASE_URL`.
