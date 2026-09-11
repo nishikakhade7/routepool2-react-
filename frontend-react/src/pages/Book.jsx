@@ -2,16 +2,44 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import VisionBadge from '../components/VisionBadge';
-import RouteVisual from '../components/RouteVisual';
+import Spinner from '../components/Spinner';
+import { getNodes } from '../api/client';
 
 export default function Book() {
   const navigate = useNavigate();
-  // Static demo flow stages: 'where' -> 'searching' -> 'grouping' -> 'driver' -> 'summary' -> 'pay' -> 'paid'
+
+  // Stage: 'where' -> 'searching' -> 'grouping' -> 'driver' -> 'summary' -> 'pay' -> 'paid'
   const [stage, setStage] = useState('where');
   const [countdown, setCountdown] = useState(15);
   const [progress, setProgress] = useState(0);
 
-  // Auto-progress some stages in demo
+  // Real node data
+  const [nodes, setNodes] = useState([]);
+  const [loadingNodes, setLoadingNodes] = useState(true);
+  const [pickupId, setPickupId] = useState('');
+  const [dropId, setDropId] = useState('');
+
+  // Load nodes from the API
+  useEffect(() => {
+    let cancelled = false;
+    getNodes().then(data => {
+      if (!cancelled) {
+        setNodes(data);
+        const campus = data.find(n => n.area === 'campus' || n.shortName === 'SPIT');
+        if (campus) setPickupId(campus.id);
+        setLoadingNodes(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoadingNodes(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const pickupNode = nodes.find(n => n.id === pickupId);
+  const dropNode   = nodes.find(n => n.id === dropId);
+  const dropNodes  = nodes.filter(n => n.id !== pickupId);
+
+  // Auto-progress some stages
   useEffect(() => {
     let timer;
     if (stage === 'searching') {
@@ -19,6 +47,8 @@ export default function Book() {
     } else if (stage === 'grouping') {
       timer = setTimeout(() => setStage('driver'), 2500);
     } else if (stage === 'driver') {
+      setCountdown(15);
+      setProgress(0);
       const interval = setInterval(() => {
         setCountdown(c => {
           if (c <= 1) { clearInterval(interval); setStage('summary'); return 0; }
@@ -31,12 +61,18 @@ export default function Book() {
     return () => clearTimeout(timer);
   }, [stage]);
 
+  const selectStyle = {
+    flex: 1, border: 0, outline: 0, background: 'transparent',
+    font: '500 16px Karla,sans-serif', color: '#211C26',
+    padding: '14px 0', cursor: 'pointer',
+  };
+
   return (
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
       <NavBar />
-      
+
       <main className="screen-pad" style={{ maxWidth: 640 }}>
-        
+
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <VisionBadge />
           <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 8px' }}>
@@ -50,17 +86,51 @@ export default function Book() {
         {stage === 'where' && (
           <div className="card animate-rise">
             <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 16px', color: 'rgba(33,28,38,.55)' }}>Where to?</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
-              <div className="input-row">
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#211C26', marginRight: 10 }} />
-                <input readOnly value="S.P.I.T Gate 2" />
+
+            {loadingNodes ? (
+              <div className="loading-center" style={{ padding: 40 }}><Spinner /></div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
+                {/* Pickup */}
+                <div className="input-row">
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#211C26', marginRight: 10, flexShrink: 0 }} />
+                  <select
+                    value={pickupId}
+                    onChange={e => setPickupId(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="" disabled>Select pickup…</option>
+                    {nodes.map(n => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Drop-off */}
+                <div className="input-row">
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', border: '2px solid #8A2B6B', marginRight: 10, flexShrink: 0 }} />
+                  <select
+                    value={dropId}
+                    onChange={e => setDropId(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="" disabled>Select destination…</option>
+                    {dropNodes.map(n => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="input-row">
-                <div style={{ width: 8, height: 8, borderRadius: '50%', border: '2px solid #8A2B6B', marginRight: 10 }} />
-                <input readOnly value="Andheri Station (West)" />
-              </div>
-            </div>
-            <button className="btn-accent" onClick={() => setStage('searching')}>Find a ride</button>
+            )}
+
+            <button
+              className="btn-accent"
+              disabled={!pickupId || !dropId || loadingNodes}
+              onClick={() => setStage('searching')}
+              style={{ opacity: (!pickupId || !dropId) ? 0.5 : 1 }}
+            >
+              Find a ride
+            </button>
           </div>
         )}
 
@@ -71,6 +141,9 @@ export default function Book() {
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#F2A230' }} />
             </div>
             <div style={{ font: '700 20px Familjen Grotesk,sans-serif', color: '#211C26' }}>Finding nearby drivers...</div>
+            <div style={{ fontSize: 13, color: 'rgba(33,28,38,.5)' }}>
+              {pickupNode?.name} → {dropNode?.name}
+            </div>
           </div>
         )}
 
@@ -89,9 +162,13 @@ export default function Book() {
           <div className="card-dark animate-rise" style={{ padding: '32px 36px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: '#FFF1DB', color: '#A96A0C', padding: '6px 11px', borderRadius: 999, marginBottom: 12 }}>Arriving in {countdown}s</div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: '#FFF1DB', color: '#A96A0C', padding: '6px 11px', borderRadius: 999, marginBottom: 12 }}>
+                  Arriving in {countdown}s
+                </div>
                 <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', marginBottom: 4 }}>Auto MH 02 AB 1234</div>
-                <div style={{ fontSize: 13, color: 'rgba(253,250,244,.7)', fontWeight: 600 }}>Driver: Ramesh</div>
+                <div style={{ fontSize: 13, color: 'rgba(253,250,244,.7)', fontWeight: 600 }}>
+                  Driver: Ramesh · {pickupNode?.name} → {dropNode?.name}
+                </div>
               </div>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#F4EEE3', border: '2px solid #F2A230', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 18px Familjen Grotesk,sans-serif', color: '#211C26' }}>
                 RC
@@ -108,9 +185,12 @@ export default function Book() {
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#E4F2EC', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#0F6B52' }}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M5 12.6l4.4 4.4L19 7" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </div>
-            <h2 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 26, letterSpacing: '-.03em', margin: '0 0 8px' }}>Ride completed</h2>
+            <h2 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 26, letterSpacing: '-.03em', margin: '0 0 4px' }}>Ride completed</h2>
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: 'rgba(33,28,38,.45)', fontWeight: 600 }}>
+              {pickupNode?.name} → {dropNode?.name}
+            </p>
             <p style={{ margin: '0 0 32px', fontSize: 14.5, color: 'rgba(33,28,38,.55)' }}>Hope you had a great trip.</p>
-            
+
             <div style={{ background: '#FDFAF4', border: '1px solid rgba(33,28,38,.08)', borderRadius: 16, padding: 20, marginBottom: 24, textAlign: 'left' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ fontWeight: 600, color: 'rgba(33,28,38,.6)' }}>Total Fare</span>
@@ -125,7 +205,7 @@ export default function Book() {
                 <span style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700 }}>₹30</span>
               </div>
             </div>
-            
+
             <button className="btn-primary" onClick={() => setStage('pay')}>Pay via UPI</button>
           </div>
         )}
