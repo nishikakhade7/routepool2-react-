@@ -51,12 +51,20 @@ export function getDashboardStats() {
 }
 
 export function getBusyRoutes() {
-  return request('GET', '/dashboard/busy-routes');
+  return request('GET', '/dashboard/busy-routes').then((res) => res.routes ?? res);
+}
+
+export function getHistory() {
+  return request('GET', '/dashboard/history').then((res) => res.history ?? res);
+}
+
+export function getCampusStats() {
+  return request('GET', '/dashboard/campus-stats');
 }
 
 // ---- Rides ----------------------------------------------
 export function getNodes() {
-  return request('GET', '/rides/nodes');
+  return request('GET', '/rides/nodes').then((res) => res.nodes ?? res);
 }
 
 /**
@@ -72,7 +80,7 @@ export function requestRide({ pickupNodeId, dropNodeId, windowStart, windowEnd, 
 }
 
 export function getMatches(rideRequestId) {
-  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}`);
+  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}`).then((res) => res.groups ?? res);
 }
 
 // ---- Groups ---------------------------------------------
@@ -85,7 +93,7 @@ export function joinGroup(rideRequestId, memberRideRequestIds) {
 }
 
 export function getChat(groupId) {
-  return request('GET', `/groups/${groupId}/chat`);
+  return request('GET', `/groups/${groupId}/chat`).then((res) => res.messages ?? res);
 }
 
 export function postChat(groupId, message) {

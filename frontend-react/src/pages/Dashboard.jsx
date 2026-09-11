@@ -31,7 +31,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  const activeGroup = stats?.recentActivity?.find(a => a.status === 'open' || a.status === 'locked');
+  const activeGroup = stats?.recentActivity?.find(a => a.status === 'forming' || a.status === 'confirmed');
   const firstName = user?.name?.split(' ')[0] ?? 'there';
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
@@ -83,10 +83,10 @@ export default function Dashboard() {
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', color: '#F2A230' }}>
-                      ₹{activeGroup.fareShare.toFixed(0)}
+                      ₹{(activeGroup.fareShare ?? 0).toFixed(0)}
                     </div>
                     <div style={{ fontSize: 13, color: 'rgba(253,250,244,.5)', fontWeight: 600 }}>
-                      vs ₹{activeGroup.soloFare.toFixed(0)} solo
+                      vs ₹{(activeGroup.soloFare ?? 0).toFixed(0)} solo
                     </div>
                   </div>
                 </div>
@@ -144,8 +144,8 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em' }}>₹{a.fareShare.toFixed(0)}</div>
-                        <div style={{ fontSize: 11.5, color: '#0F8A5F', fontWeight: 600, marginTop: 2 }}>saved ₹{a.saved.toFixed(0)}</div>
+                        <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em' }}>₹{(a.fareShare ?? 0).toFixed(0)}</div>
+                        <div style={{ fontSize: 11.5, color: '#0F8A5F', fontWeight: 600, marginTop: 2 }}>saved ₹{(a.saved ?? 0).toFixed(0)}</div>
                       </div>
                     </div>
                   ))}
