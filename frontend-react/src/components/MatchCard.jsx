@@ -2,7 +2,6 @@ import { useState } from 'react';
 import Spinner from './Spinner';
 import GroupChat from './GroupChat';
 import { joinGroup } from '../api/client';
-import { useAuth } from '../contexts/AuthContext';
 
 // Deterministic avatar colors based on name hash
 const AVATAR_PALETTE = [
@@ -36,7 +35,6 @@ export default function MatchCard({ group, index, myRideRequestId }) {
   const isBest = index === 0;
 
   const youMember = group.members?.find(m => m.isYou);
-  const others = group.members?.filter(m => !m.isYou) ?? [];
 
   async function handleJoin() {
     if (joining || joinedGroup) return;
@@ -52,7 +50,6 @@ export default function MatchCard({ group, index, myRideRequestId }) {
     }
   }
 
-  const pickupName = group.members?.[0]?.dropNode?.name; // first member's drop
   const departureFmt = fmt(group.departureTime);
   const totalFare = group.totalFare ?? 0;
   const youPay = youMember?.fareShare ?? 0;

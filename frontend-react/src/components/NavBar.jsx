@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
@@ -10,13 +10,7 @@ const NAV_ITEMS = [
 ];
 
 export default function NavBar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  function handleLogout() {
-    logout();
-    navigate('/login');
-  }
+  const { user } = useAuth();
 
   const initials = user?.initials || '??';
   const firstName = user?.name?.split(' ')[0] || 'You';

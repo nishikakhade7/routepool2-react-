@@ -1,5 +1,4 @@
 import NavBar from '../components/NavBar';
-import DemoDataBadge from '../components/DemoDataBadge';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
@@ -12,7 +11,6 @@ export default function Profile() {
       <NavBar />
       
       <main className="screen-pad" style={{ maxWidth: 800 }}>
-        <DemoDataBadge />
         <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 32px' }}>
           Profile & Settings
         </h1>

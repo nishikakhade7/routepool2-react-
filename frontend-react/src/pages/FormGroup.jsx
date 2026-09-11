@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
@@ -7,7 +6,6 @@ import MatchCard from '../components/MatchCard';
 import { getNodes, requestRide, getMatches } from '../api/client';
 
 export default function FormGroup() {
-  const navigate = useNavigate();
   // 'form' | 'searching' | 'results'
   const [stage, setStage] = useState('form');
   
@@ -29,7 +27,7 @@ export default function FormGroup() {
     getNodes().then(data => {
       if (!cancelled) {
         setNodes(data);
-        const campus = data.find(n => n.shortName === 'GATE 2');
+        const campus = data.find(n => n.shortName === 'SPIT' || n.area === 'campus');
         if (campus) setPickupId(campus.id);
         setLoadingNodes(false);
       }

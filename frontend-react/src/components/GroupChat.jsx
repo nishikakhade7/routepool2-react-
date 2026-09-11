@@ -105,7 +105,7 @@ export default function GroupChat({ groupId, groupName, route, onClose }) {
           )}
           {messages.map((m, i) => {
             const isMe = m.isYou || m.userId === user?.id;
-            const { bg, fg } = avatarColor(m.name);
+            const { bg: _bg, fg } = avatarColor(m.name);
             return (
               <div
                 key={m.id || i}
