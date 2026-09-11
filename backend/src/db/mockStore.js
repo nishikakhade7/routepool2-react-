@@ -318,7 +318,8 @@ const chatMessageModel = {
 // ── withTransaction mock (just runs the fn directly) ─────────────────────────
 
 async function withTransaction(fn) {
-  // Mock client: expose same query API as pool (unused in mock models but keeps signature)\n  const mockClient = { query: async () => ({ rows: [] }) };
+  // Mock client: expose same query API as pool (unused in mock models but keeps signature)
+  const mockClient = { query: async () => ({ rows: [] }) };
   return fn(mockClient);
 }
 
