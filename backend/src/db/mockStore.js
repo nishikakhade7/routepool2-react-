@@ -42,6 +42,7 @@ const wEnd        = new Date(Date.now() + 2.5 * 60 * 60 * 1000);
 
 const GROUPS = [
   { id: '00000000-0000-0000-0000-000000000201', pickup_node_id: '00000000-0000-0000-0000-000000000001', departure_time: deptureTime, total_fare: 159.84, status: 'confirmed', created_at: new Date() },
+  { id: '00000000-0000-0000-0000-000000000999', pickup_node_id: '00000000-0000-0000-0000-000000000001', departure_time: new Date(), total_fare: 50, status: 'confirmed', created_at: new Date() },
 ];
 
 const RIDE_REQUESTS = [

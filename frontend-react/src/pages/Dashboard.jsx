@@ -78,7 +78,7 @@ export default function Dashboard() {
                       Departs {fmt(activeGroup.departureTime)}
                     </div>
                     <div style={{ fontSize: 13, color: 'rgba(253,250,244,.7)', fontWeight: 600 }}>
-                      Gate 2 to {activeGroup.dropName}
+                      {activeGroup.pickupName ?? '—'} → {activeGroup.dropName}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -138,7 +138,7 @@ export default function Dashboard() {
                         </svg>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>Gate 2 to {a.dropName}</div>
+                        <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>{a.pickupName ?? '—'} → {a.dropName}</div>
                         <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 600 }}>
                           {new Date(a.departureTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })} · {a.status}
                         </div>

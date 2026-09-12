@@ -105,7 +105,7 @@ export default function History() {
                   <tr key={item.groupId || i} style={{ borderBottom: i < history.length - 1 ? '1px solid rgba(33,28,38,.06)' : 'none' }}>
                     <td style={{ padding: '20px 24px' }}>
                       <div style={{ font: '700 15px Familjen Grotesk,sans-serif', marginBottom: 4 }}>
-                        Gate 2 → {item.dropName}
+                        {item.pickupName ?? '—'} → {item.dropName}
                       </div>
                       <div style={{ fontSize: 13, color: 'rgba(33,28,38,.5)', fontWeight: 500 }}>
                         {fmt(item.departureTime)}

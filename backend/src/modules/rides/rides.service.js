@@ -5,6 +5,7 @@ const { dijkstra } = require('../../utils/dijkstra');
 const { autoFareForDistance } = require('../../utils/fare');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
+const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
 
 async function listNodes() {
   return nodeModel.listAll();
@@ -18,9 +19,23 @@ async function distanceBetween(pickupNodeId, dropNodeId) {
   return result;
 }
 
-async function createRequest(userId, { pickupNodeId, dropNodeId, windowStart, windowEnd, flexMinutes }) {
+/**
+ * Create a new ride request.
+ * Accepts a single `pickupTime` (ISO datetime) from the user.
+ * Internally derives window_start / window_end (±MATCH_BUFFER_MINUTES) and
+ * stores flexMinutes = 0 — matching is now handled entirely by the buffer
+ * constant in matchingConfig.js.
+ */
+async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
   if (pickupNodeId === dropNodeId) throw ApiError.badRequest('Pickup and drop node must differ');
-  if (new Date(windowEnd) <= new Date(windowStart)) throw ApiError.badRequest('windowEnd must be after windowStart');
+
+  const pickupMs = new Date(pickupTime).getTime();
+  if (isNaN(pickupMs)) throw ApiError.badRequest('Invalid pickupTime');
+
+  const bufferMs = MATCH_BUFFER_MINUTES * 60000;
+  const windowStart = new Date(pickupMs - bufferMs).toISOString();
+  const windowEnd   = new Date(pickupMs + bufferMs).toISOString();
+  const flexMinutes = 0;
 
   const [pickup, drop] = await Promise.all([nodeModel.findById(pickupNodeId), nodeModel.findById(dropNodeId)]);
   if (!pickup || !drop) throw ApiError.notFound('Pickup or drop node not found');
@@ -37,9 +52,9 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, windowStart, wi
     id: request.id,
     pickup,
     drop,
+    pickupTime: new Date(pickupMs).toISOString(),
     windowStart: request.window_start,
     windowEnd: request.window_end,
-    flexMinutes: request.flex_minutes,
     status: request.status,
     estimatedDistanceKm: Number(request.estimated_distance_km),
     soloFare: Number(request.solo_fare),
@@ -52,3 +67,4 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, windowStart, wi
 }
 
 module.exports = { listNodes, distanceBetween, createRequest };
+
