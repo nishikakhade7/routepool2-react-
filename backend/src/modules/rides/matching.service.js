@@ -6,6 +6,7 @@ const { dijkstra } = require('../../utils/dijkstra');
 const { buildCumulativePath, splitFareBySegments } = require('../../utils/fare');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
+const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
 
 // Scoring weights: how much of the match score comes from shared route
 // overlap (graph distance shared with the target's path), pickup-time
@@ -16,20 +17,21 @@ const MIN_SCORE = 0.4;
 const MAX_GROUP_SIZE = 4;
 const PICKUP_PROXIMITY_METERS = 600;
 
-function windowsOverlap(a, b) {
-  const aStart = new Date(a.window_start).getTime() - a.flex_minutes * 60000;
-  const aEnd = new Date(a.window_end).getTime() + a.flex_minutes * 60000;
-  const bStart = new Date(b.window_start).getTime() - b.flex_minutes * 60000;
-  const bEnd = new Date(b.window_end).getTime() + b.flex_minutes * 60000;
-  return aStart <= bEnd && bStart <= aEnd;
+// Two riders are time-compatible if their requested pickup times are within
+// MATCH_BUFFER_MINUTES of each other. window_start stores the exact pickup
+// time (window_end = window_start + 2*buffer, set by rides.service.js).
+function timesCompatible(a, b) {
+  const tA = new Date(a.window_start).getTime();
+  const tB = new Date(b.window_start).getTime();
+  return Math.abs(tA - tB) <= MATCH_BUFFER_MINUTES * 60000;
 }
 
+// Score 1.0 when times are identical, 0.0 when exactly MATCH_BUFFER_MINUTES apart.
 function timeScore(a, b) {
-  const aMid = (new Date(a.window_start).getTime() + new Date(a.window_end).getTime()) / 2;
-  const bMid = (new Date(b.window_start).getTime() + new Date(b.window_end).getTime()) / 2;
-  const diffMinutes = Math.abs(aMid - bMid) / 60000;
-  const maxFlex = Math.max(a.flex_minutes, b.flex_minutes, 1);
-  return Math.max(0, 1 - diffMinutes / (maxFlex * 3));
+  const tA = new Date(a.window_start).getTime();
+  const tB = new Date(b.window_start).getTime();
+  const diffMinutes = Math.abs(tA - tB) / 60000;
+  return Math.max(0, 1 - diffMinutes / MATCH_BUFFER_MINUTES);
 }
 
 // Both paths start at the same pickup node, so the shared route overlap is
@@ -72,7 +74,7 @@ async function findMatches(rideRequestId, userId) {
 
   const scored = [];
   for (const c of candidates) {
-    if (!windowsOverlap(target, c)) continue;
+    if (!timesCompatible(target, c)) continue;
 
     const cPath = pathTo(c.drop_node_id);
     if (!cPath) continue;
@@ -143,7 +145,11 @@ async function findMatches(rideRequestId, userId) {
     })));
 
     const { totalFare, shares } = splitFareBySegments(backbonePath.stops, fareMembers, env.autoTariff);
+    // Departure = the latest requested pickup time among all group members.
     const departureTime = new Date(Math.max(...allMembers.map((m) => new Date(m.request.window_start).getTime())));
+
+    // All members share the same pickup node (they were matched on pickup proximity).
+    const pickupNode = await nodeById(target.pickup_node_id);
 
     groups.push({
       groupKey: allMembers.map((m) => m.request.id).sort().join(':'),
@@ -151,6 +157,7 @@ async function findMatches(rideRequestId, userId) {
       departureTime: departureTime.toISOString(),
       totalFare,
       distanceKm: backbonePath.distanceKm,
+      pickupNode: pickupNode ? { id: pickupNode.id, name: pickupNode.name, shortName: pickupNode.shortName } : null,
       memberRideRequestIds: allMembers.map((m) => m.request.id),
       members: fareMembers.map((m) => ({
         userId: m.userId,

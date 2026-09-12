@@ -3,7 +3,8 @@ import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import MatchCard from '../components/MatchCard';
-import { getNodes, requestRide, getMatches } from '../api/client';
+import CustomTimePicker from '../components/CustomTimePicker';
+import { getNodes, requestRide, getMatches, USE_MOCK_MATCHING } from '../api/client';
 
 export default function FormGroup() {
   // 'form' | 'searching' | 'results'
@@ -12,10 +13,9 @@ export default function FormGroup() {
   // Form data
   const [nodes, setNodes] = useState([]);
   const [loadingNodes, setLoadingNodes] = useState(true);
-  const [pickupId, setPickupId] = useState('');
-  const [dropId, setDropId] = useState('');
-  const [windowStart, setWindowStart] = useState('');
-  const [flexMinutes, setFlexMinutes] = useState(10);
+  const [pickupText, setPickupText] = useState('');
+  const [dropText, setDropText] = useState('');
+  const [pickupTime, setPickupTime] = useState(''); // HH:MM local time
   const [formError, setFormError] = useState(null);
   
   // Results
@@ -27,8 +27,6 @@ export default function FormGroup() {
     getNodes().then(data => {
       if (!cancelled) {
         setNodes(data);
-        const campus = data.find(n => n.shortName === 'SPIT' || n.area === 'campus');
-        if (campus) setPickupId(campus.id);
         setLoadingNodes(false);
       }
     }).catch(() => {
@@ -37,38 +35,59 @@ export default function FormGroup() {
     return () => { cancelled = true; };
   }, []);
 
-  // Time slot helper: generates 3 slots from now
-  const timeSlots = [];
-  const now = new Date();
-  for (let i = 0; i < 3; i++) {
-    const d = new Date(now.getTime() + i * 30 * 60000);
-    const end = new Date(d.getTime() + 30 * 60000);
-    const label = `${d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})} – ${end.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}`;
-    timeSlots.push({ start: d.toISOString(), end: end.toISOString(), label });
-  }
 
   async function handleFindMatches() {
     setFormError(null);
-    if (!pickupId || !dropId) { setFormError('Select both pickup and drop'); return; }
-    if (pickupId === dropId) { setFormError('Pickup and drop must be different'); return; }
-    if (!windowStart) { setFormError('Select a time slot'); return; }
+    if (!pickupText || !dropText) { setFormError('Enter both pickup and drop'); return; }
+    if (pickupText.toLowerCase() === dropText.toLowerCase()) { setFormError('Pickup and drop must be different'); return; }
+    if (!pickupTime) { setFormError('Select a pickup time'); return; }
 
-    const slot = timeSlots.find(s => s.start === windowStart);
     setStage('searching');
-    
+
+    if (USE_MOCK_MATCHING) {
+      // Simulate stages
+      await new Promise(r => setTimeout(r, 1500));
+      setStage('grouping');
+      await new Promise(r => setTimeout(r, 1500));
+      
+      // TODO: Replace this simulated match with real matching/fare logic when USE_MOCK_MATCHING is false
+      setMatches([{
+        groupKey: 'mock1',
+        isMock: true,
+        score: 0.98,
+        pickupNode: { name: pickupText, shortName: pickupText },
+        distanceKm: 8.5,
+        totalFare: 150,
+        departureTime: new Date().toISOString(),
+        members: [
+          { isYou: true, name: 'You', initials: 'YOU', dropNode: { name: dropText, shortName: dropText }, fareShare: 85, soloFare: 150, dropDistanceKm: 5.2 },
+          { name: 'Student 2', initials: 'S2', dropNode: { name: dropText, shortName: dropText }, fareShare: 65, dropDistanceKm: 3.1 }
+        ]
+      }]);
+      setStage('results');
+      return;
+    }
+
+    // Combine today's date with the HH:MM value from the time input to get an ISO string.
+    const today = new Date();
+    const [hours, minutes] = pickupTime.split(':').map(Number);
+    const pickupDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, 0, 0);
+    const pickupISO = pickupDate.toISOString();
+
     try {
+      // (This would normally use pickupId and dropId, which we've removed, 
+      // but keeping the block intact behind the flag as requested)
       const req = await requestRide({
-        pickupNodeId: pickupId,
-        dropNodeId: dropId,
-        windowStart: slot.start,
-        windowEnd: slot.end,
-        flexMinutes,
+        pickupNodeId: pickupText, // Mock mapping
+        dropNodeId: dropText, // Mock mapping
+        pickupTime: pickupISO,
       });
       setMyRequestId(req.id);
-      
-      // Artificial delay for the cool radar animation
-      await new Promise(r => setTimeout(r, 1800));
-      
+
+      await new Promise(r => setTimeout(r, 1500));
+      setStage('grouping');
+      await new Promise(r => setTimeout(r, 1500));
+
       const m = await getMatches(req.id);
       setMatches(m);
       setStage('results');
@@ -98,64 +117,42 @@ export default function FormGroup() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
+                  <div style={{ marginBottom: 16 }}>
                     <label className="input-label">Pickup</label>
                     <div className="input-row" style={{ padding: '0 16px' }}>
-                      <select
-                        value={pickupId}
-                        onChange={e => setPickupId(e.target.value)}
-                        style={{ flex: 1, border: 0, outline: 0, background: 'transparent', font: '500 15px Karla,sans-serif', color: '#211C26', padding: '14px 0', cursor: 'pointer' }}
-                      >
-                        <option value="" disabled>Select pickup...</option>
-                        {nodes.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                      </select>
+                      <input
+                        type="text"
+                        value={pickupText}
+                        onChange={e => setPickupText(e.target.value)}
+                        placeholder="Enter pickup..."
+                        style={{ width: '100%', border: 0, outline: 0, background: 'transparent', font: '500 15px Karla,sans-serif', color: '#211C26', padding: '14px 0' }}
+                      />
                     </div>
                   </div>
-                  <div>
+                  <div style={{ marginBottom: 16 }}>
                     <label className="input-label">Drop-off</label>
                     <div className="input-row" style={{ padding: '0 16px' }}>
-                      <select
-                        value={dropId}
-                        onChange={e => setDropId(e.target.value)}
-                        style={{ flex: 1, border: 0, outline: 0, background: 'transparent', font: '500 15px Karla,sans-serif', color: '#211C26', padding: '14px 0', cursor: 'pointer' }}
-                      >
-                        <option value="" disabled>Select destination...</option>
-                        {nodes.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-                      </select>
+                      <input
+                        type="text"
+                        value={dropText}
+                        onChange={e => setDropText(e.target.value)}
+                        placeholder="Enter destination..."
+                        style={{ width: '100%', border: 0, outline: 0, background: 'transparent', font: '500 15px Karla,sans-serif', color: '#211C26', padding: '14px 0' }}
+                      />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <label className="input-label" style={{ marginBottom: 12 }}>Time window</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                    {timeSlots.map(s => (
-                      <button
-                        key={s.start}
-                        className={`chip-btn ${windowStart === s.start ? 'selected' : ''}`}
-                        onClick={() => setWindowStart(s.start)}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
+                  <label className="input-label" style={{ marginBottom: 12 }}>Pickup time</label>
+                  <div className="input-row" style={{ padding: '0 16px' }}>
+                    <CustomTimePicker
+                      value={pickupTime}
+                      onChange={setPickupTime}
+                    />
                   </div>
-                </div>
-
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <label className="input-label" style={{ margin: 0 }}>Flexibility</label>
-                    <span style={{ font: '600 13px Karla,sans-serif', color: 'rgba(33,28,38,.5)' }}>±{flexMinutes} mins</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0" max="30" step="5"
-                    value={flexMinutes}
-                    onChange={e => setFlexMinutes(Number(e.target.value))}
-                    style={{ width: '100%', accentColor: '#211C26', cursor: 'pointer' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(33,28,38,.4)', marginTop: 8, fontWeight: 600 }}>
-                    <span>Strict</span>
-                    <span>Flexible</span>
+                  <div style={{ fontSize: 12, color: 'rgba(33,28,38,.45)', fontWeight: 600, marginTop: 8 }}>
+                    Riders within 5 minutes of your time will be matched with you.
                   </div>
                 </div>
 
@@ -185,12 +182,25 @@ export default function FormGroup() {
           <div style={{ position: 'relative', width: 220, height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
             <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(242,162,48,.3)', animation: 'radar 2s linear infinite' }} />
             <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(242,162,48,.3)', animation: 'radar 2s 1s linear infinite' }} />
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F2A230', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 8px rgba(242,162,48,.2)' }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 4a5.5 5.5 0 015.5 5.5c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5A5.5 5.5 0 0112 4z" stroke="#211C26" strokeWidth="2.4" strokeLinejoin="round"/></svg>
+            <div style={{ position: 'relative', width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#F2A230', boxShadow: '0 0 0 8px rgba(242,162,48,.2)' }} />
             </div>
           </div>
           <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', color: '#211C26' }}>Finding students...</div>
           <div style={{ fontSize: 15, color: 'rgba(33,28,38,.55)', fontWeight: 500 }}>Scanning graph for overlapping routes</div>
+        </main>
+      )}
+
+      {stage === 'grouping' && (
+        <main className="screen-pad loading-center" style={{ minHeight: '80vh', position: 'relative' }}>
+          <div style={{ position: 'relative', width: 220, height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+            <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(138,43,107,.3)', animation: 'radar 1.5s linear infinite' }} />
+            <div style={{ position: 'relative', width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#8A2B6B', boxShadow: '0 0 0 8px rgba(138,43,107,.2)' }} />
+            </div>
+          </div>
+          <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', color: '#211C26' }}>Grouping/matching...</div>
+          <div style={{ fontSize: 15, color: 'rgba(33,28,38,.55)', fontWeight: 500 }}>Optimizing pool routes</div>
         </main>
       )}
 
@@ -213,7 +223,7 @@ export default function FormGroup() {
           {matches.length === 0 ? (
             <div className="card loading-center" style={{ padding: 80 }}>
               <div style={{ font: '700 18px Familjen Grotesk,sans-serif', marginBottom: 8, color: '#211C26' }}>No exact matches right now</div>
-              <div>Try widening your time window or flexibility.</div>
+              <div>Try a different pickup time.</div>
               <button className="btn-ghost" style={{ marginTop: 24 }} onClick={() => setStage('form')}>Back to form</button>
             </div>
           ) : (

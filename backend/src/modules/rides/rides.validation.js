@@ -4,9 +4,9 @@ const requestRideSchema = z.object({
   body: z.object({
     pickupNodeId: z.string().uuid(),
     dropNodeId: z.string().uuid(),
-    windowStart: z.string().datetime({ offset: true }),
-    windowEnd: z.string().datetime({ offset: true }),
-    flexMinutes: z.number().int().min(0).max(60).default(10),
+    // Single exact pickup time supplied by the user.
+    // The server derives window_start/window_end using MATCH_BUFFER_MINUTES.
+    pickupTime: z.string().datetime({ offset: true }),
   }),
   query: z.any(),
   params: z.any(),

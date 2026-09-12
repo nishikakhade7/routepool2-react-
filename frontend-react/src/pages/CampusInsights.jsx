@@ -6,7 +6,7 @@ import { getCampusStats, getBusyRoutes } from '../api/client';
 // Bar chart heights for the last 12 hours (8am–8pm) — driven from busyRoutes count in real usage,
 // here we keep a visual shape but scale the peak bar to the actual busiest corridor count.
 const HOUR_LABELS = ['8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM', '8 PM'];
-const HOUR_SHAPE  = [10, 20, 35, 50, 85, 100, 45]; // relative shape (%)
+const HOUR_SHAPE  = [0, 0, 0, 0, 0, 0, 0]; // Empty state until real data arrives
 
 export default function CampusInsights() {
   const [stats, setStats]         = useState(null);
@@ -38,8 +38,11 @@ export default function CampusInsights() {
       <main className="screen-pad" style={{ maxWidth: 1000 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
           <div>
-            <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 8px' }}>
+            <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 12 }}>
               Campus Insights
+              <span style={{ font: '700 10.5px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: '#F4EEE3', color: '#8A2B6B', padding: '6px 10px', borderRadius: 999 }}>
+                Admin
+              </span>
             </h1>
             <p style={{ margin: 0, fontSize: 14.5, color: 'rgba(33,28,38,.55)' }}>
               Real-time analytics for S.P.I.T commuter trends.

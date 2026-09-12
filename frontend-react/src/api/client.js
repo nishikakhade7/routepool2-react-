@@ -6,6 +6,8 @@
 
 const BASE = '/api';
 
+export const USE_MOCK_MATCHING = true;
+
 function getToken() {
   return localStorage.getItem('rp_token');
 }
@@ -71,12 +73,12 @@ export function getNodes() {
  * @param {object} params
  * @param {string} params.pickupNodeId
  * @param {string} params.dropNodeId
- * @param {string} params.windowStart  ISO datetime string
- * @param {string} params.windowEnd    ISO datetime string
- * @param {number} [params.flexMinutes=10]
+ * @param {string} params.pickupTime  ISO datetime string (exact desired pickup time).
+ *   The server applies a ±5-minute buffer (MATCH_BUFFER_MINUTES in matchingConfig.js)
+ *   when comparing riders — no need to pass a window or flex value.
  */
-export function requestRide({ pickupNodeId, dropNodeId, windowStart, windowEnd, flexMinutes = 10 }) {
-  return request('POST', '/rides/request', { pickupNodeId, dropNodeId, windowStart, windowEnd, flexMinutes });
+export function requestRide({ pickupNodeId, dropNodeId, pickupTime }) {
+  return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupTime });
 }
 
 export function getMatches(rideRequestId) {

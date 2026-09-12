@@ -21,10 +21,12 @@ async function getStats(userId) {
       const g  = _db.groups.find(g => g.id === m.group_id) || {};
       const dn = _db.nodes.find(n => n.id === m.drop_node_id) || {};
       const rr = _db.rideRequests.find(r => r.id === m.ride_request_id) || {};
+      const pn = _db.nodes.find(n => n.id === rr.pickup_node_id) || {};
       const fareShare = Number(m.fare_share);
       const soloFare  = Number(rr.solo_fare || 0);
       return {
         groupId:       g.id,
+        pickupName:    pn.name || '—',
         dropName:      dn.name,
         dropShort:     dn.short_name,
         departureTime: g.departure_time,
@@ -38,10 +40,12 @@ async function getStats(userId) {
     const { pool } = require('../../config/db');
     const { rows: activity } = await pool.query(
       `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
+              pn.name AS pickup_name,
               dn.name AS drop_name, dn.short_name AS drop_short, rr.solo_fare
        FROM group_members gm
        JOIN groups g ON g.id = gm.group_id
        JOIN ride_requests rr ON rr.id = gm.ride_request_id
+       JOIN nodes pn ON pn.id = rr.pickup_node_id
        JOIN nodes dn ON dn.id = gm.drop_node_id
        WHERE gm.user_id = $1
        ORDER BY g.departure_time DESC
@@ -50,6 +54,7 @@ async function getStats(userId) {
     );
     recentActivity = activity.map((a) => ({
       groupId:       a.group_id,
+      pickupName:    a.pickup_name,
       dropName:      a.drop_name,
       dropShort:     a.drop_short,
       departureTime: a.departure_time,
@@ -87,6 +92,7 @@ async function getHistory(userId) {
       const g  = _db.groups.find(g => g.id === m.group_id) || {};
       const dn = _db.nodes.find(n => n.id === m.drop_node_id) || {};
       const rr = _db.rideRequests.find(r => r.id === m.ride_request_id) || {};
+      const pn = _db.nodes.find(n => n.id === rr.pickup_node_id) || {};
       const fareShare = Number(m.fare_share);
       const soloFare  = Number(rr.solo_fare || 0);
 
@@ -99,6 +105,7 @@ async function getHistory(userId) {
 
       return {
         groupId: g.id,
+        pickupName: pn.name || '—',
         dropName: dn.name,
         departureTime: g.departure_time,
         status: g.status,
@@ -115,21 +122,24 @@ async function getHistory(userId) {
   const { pool } = require('../../config/db');
   const { rows } = await pool.query(
     `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
+            pn.name AS pickup_name,
             dn.name AS drop_name, rr.solo_fare,
             array_agg(u.initials ORDER BY u.name) FILTER (WHERE u.id != $1) AS co_riders
      FROM group_members gm
      JOIN groups g ON g.id = gm.group_id
      JOIN ride_requests rr ON rr.id = gm.ride_request_id
+     JOIN nodes pn ON pn.id = rr.pickup_node_id
      JOIN nodes dn ON dn.id = gm.drop_node_id
      JOIN group_members gm2 ON gm2.group_id = g.id
      JOIN users u ON u.id = gm2.user_id
      WHERE gm.user_id = $1
-     GROUP BY g.id, g.departure_time, g.status, gm.fare_share, dn.name, rr.solo_fare
+     GROUP BY g.id, g.departure_time, g.status, gm.fare_share, pn.name, dn.name, rr.solo_fare
      ORDER BY g.departure_time DESC`,
     [userId]
   );
   return rows.map(r => ({
     groupId:       r.group_id,
+    pickupName:    r.pickup_name,
     dropName:      r.drop_name,
     departureTime: r.departure_time,
     status:        r.status,

@@ -40,6 +40,15 @@ export default function MatchCard({ group, index, myRideRequestId }) {
     if (joining || joinedGroup) return;
     setJoining(true);
     setJoinError(null);
+
+    if (group.isMock) {
+      setTimeout(() => {
+        setJoinedGroup({ id: '00000000-0000-0000-0000-000000000999' });
+        setJoining(false);
+      }, 800);
+      return;
+    }
+
     try {
       const result = await joinGroup(myRideRequestId, group.memberRideRequestIds);
       setJoinedGroup(result);
@@ -137,7 +146,9 @@ export default function MatchCard({ group, index, myRideRequestId }) {
             <circle cx="250" cy="30" r="6" fill={lineColor}/>
             <circle cx="456" cy="48" r="6.5" fill="#211C26"/>
           </svg>
-          <span style={{ position: 'absolute', left: '1%', bottom: 0, font: '700 10.5px Karla,sans-serif', letterSpacing: '.06em', color: 'rgba(33,28,38,.5)' }}>GATE 2</span>
+          <span style={{ position: 'absolute', left: '1%', bottom: 0, font: '700 10.5px Karla,sans-serif', letterSpacing: '.06em', color: 'rgba(33,28,38,.5)' }}>
+            {group.pickupNode?.shortName ?? 'PICKUP'}
+          </span>
           <span style={{ position: 'absolute', right: '1%', bottom: 0, font: '700 10.5px Karla,sans-serif', letterSpacing: '.06em', color: 'rgba(33,28,38,.5)', textAlign: 'right' }}>
             {group.members?.slice(-1)[0]?.dropNode?.shortName ?? 'DROP'}
           </span>
@@ -200,18 +211,18 @@ export default function MatchCard({ group, index, myRideRequestId }) {
 
           <button
             onClick={() => setChatOpen(true)}
-            disabled={!joinedGroup}
+            disabled={!(joinedGroup || group.isMock)}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               border: '1.5px solid rgba(33,28,38,.14)', borderRadius: 14, padding: 13,
               background: '#fff', font: '700 13.5px Karla,sans-serif',
-              cursor: joinedGroup ? 'pointer' : 'not-allowed',
-              opacity: joinedGroup ? 1 : .4,
+              cursor: (joinedGroup || group.isMock) ? 'pointer' : 'not-allowed',
+              opacity: (joinedGroup || group.isMock) ? 1 : .4,
               transition: 'background .16s',
             }}
-            onMouseEnter={e => { if (joinedGroup) e.currentTarget.style.background = '#F4EEE3'; }}
+            onMouseEnter={e => { if (joinedGroup || group.isMock) e.currentTarget.style.background = '#F4EEE3'; }}
             onMouseLeave={e => e.currentTarget.style.background = '#fff'}
-            title={joinedGroup ? 'Open group chat' : 'Join the group first to chat'}
+            title={(joinedGroup || group.isMock) ? 'Open group chat' : 'Join the group first to chat'}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
               <path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-5 4v-4H6.5A2.5 2.5 0 014 13.5v-7z" stroke="#211C26" strokeWidth="1.9" strokeLinejoin="round"/>
@@ -222,11 +233,11 @@ export default function MatchCard({ group, index, myRideRequestId }) {
       </div>
 
       {/* Chat drawer */}
-      {chatOpen && joinedGroup && (
+      {chatOpen && (joinedGroup || group.isMock) && (
         <GroupChat
-          groupId={joinedGroup.id}
+          groupId={joinedGroup?.id || '00000000-0000-0000-0000-000000000999'}
           groupName={`Group ${index + 1}`}
-          route={`Gate 2 → ${group.members?.slice(-1)[0]?.dropNode?.name ?? '—'}`}
+          route={`${group.pickupNode?.name ?? 'Pickup'} → ${group.members?.slice(-1)[0]?.dropNode?.name ?? '—'}`}
           onClose={() => setChatOpen(false)}
         />
       )}
