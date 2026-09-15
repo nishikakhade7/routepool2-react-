@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Spinner from './Spinner';
 import GroupChat from './GroupChat';
-import { joinGroup } from '../api/client';
+import { joinGroup, DEMO_GROUP_ID } from '../api/client';
 
 // Deterministic avatar colors based on name hash
 const AVATAR_PALETTE = [
@@ -43,7 +43,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
 
     if (group.isMock) {
       setTimeout(() => {
-        setJoinedGroup({ id: '00000000-0000-0000-0000-000000000999' });
+        setJoinedGroup({ id: DEMO_GROUP_ID });
         setJoining(false);
       }, 800);
       return;
@@ -235,7 +235,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
       {/* Chat drawer */}
       {chatOpen && (joinedGroup || group.isMock) && (
         <GroupChat
-          groupId={joinedGroup?.id || '00000000-0000-0000-0000-000000000999'}
+          groupId={joinedGroup?.id || DEMO_GROUP_ID}
           groupName={`Group ${index + 1}`}
           route={`${group.pickupNode?.name ?? 'Pickup'} → ${group.members?.slice(-1)[0]?.dropNode?.name ?? '—'}`}
           onClose={() => setChatOpen(false)}

@@ -4,7 +4,7 @@ import { sendOtp, verifyOtp } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import Spinner from '../components/Spinner';
 
-const DOMAIN = '@spit.ac.in';
+const DOMAIN = `@${import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN || 'spit.ac.in'}`;
 const KEYS = ['1','2','3','4','5','6','7','8','9','←','0','✓'];
 
 export default function Login() {

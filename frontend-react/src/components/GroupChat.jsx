@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Spinner from './Spinner';
-import { getChat, postChat } from '../api/client';
+import { getChat, postChat, DEMO_GROUP_ID } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 const AVATAR_COLORS = [
@@ -31,7 +31,7 @@ export default function GroupChat({ groupId, groupName, route, onClose, inline =
     setError(null);
 
     // Demo mode bypass for simulated rides
-    if (groupId === '00000000-0000-0000-0000-000000000999') {
+    if (groupId === DEMO_GROUP_ID) {
       setMessages([]);
       setLoading(false);
       return;
@@ -54,7 +54,7 @@ export default function GroupChat({ groupId, groupName, route, onClose, inline =
     setSending(true);
 
     // Demo mode bypass for simulated rides
-    if (groupId === '00000000-0000-0000-0000-000000000999') {
+    if (groupId === DEMO_GROUP_ID) {
       setTimeout(() => {
         setMessages(prev => [...prev, {
           id: Math.random().toString(),
