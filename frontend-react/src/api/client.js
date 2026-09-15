@@ -8,6 +8,11 @@ const BASE = '/api';
 
 export const USE_MOCK_MATCHING = true;
 
+// Sentinel group id used by the mock-matching demo flow (FormGroup, Book,
+// MatchCard, GroupChat) to bypass the real chat API with fake in-memory
+// messages. Must stay in sync across all four call sites.
+export const DEMO_GROUP_ID = '00000000-0000-0000-0000-000000000999';
+
 function getToken() {
   return localStorage.getItem('rp_token');
 }

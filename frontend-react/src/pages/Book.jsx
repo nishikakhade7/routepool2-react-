@@ -4,6 +4,7 @@ import NavBar from '../components/NavBar';
 import VisionBadge from '../components/VisionBadge';
 import Spinner from '../components/Spinner';
 import GroupChat from '../components/GroupChat';
+import { DEMO_GROUP_ID } from '../api/client';
 
 const PRICE_RANGE_PLACEHOLDER = { min: 25, max: 90 };
 
@@ -183,7 +184,7 @@ export default function Book() {
             {/* Inline Chat */}
             <div style={{ position: 'relative', height: 400, borderRadius: 26, overflow: 'hidden', border: '1px solid rgba(33,28,38,.06)', boxShadow: '0 1px 2px rgba(33,28,38,.04), 0 22px 44px -34px rgba(33,28,38,.7)' }}>
               <GroupChat 
-                groupId="00000000-0000-0000-0000-000000000999" 
+                groupId={DEMO_GROUP_ID}
                 groupName="Your Pool" 
                 route={`${pickupText || 'Pickup'} → ${dropText || 'Drop'}`}
                 onClose={() => {}} // No-op, it's inline not an overlay
