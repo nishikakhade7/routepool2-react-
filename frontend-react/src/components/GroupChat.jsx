@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Spinner from './Spinner';
 import { getChat, postChat, DEMO_GROUP_ID } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -120,10 +121,12 @@ export default function GroupChat({ groupId, groupName, route, onClose, inline =
           </div>
         )}
         {error && <div className="error-msg-red">{error}</div>}
-        {!loading && messages.length === 0 && (
-          <p style={{ textAlign: 'center', color: 'rgba(33,28,38,.4)', font: '600 13.5px Karla,sans-serif', padding: '32px 0' }}>
-            No messages yet. Say hello!
-          </p>
+        {!loading && !error && messages.length === 0 && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ textAlign: 'center', color: 'rgba(33,28,38,.4)', font: '600 13.5px Karla,sans-serif', margin: 0 }}>
+              No messages yet. Say hello!
+            </p>
+          </div>
         )}
         {messages.map((m, i) => {
           const isMe = m.isYou || m.userId === user?.id;
@@ -179,10 +182,19 @@ export default function GroupChat({ groupId, groupName, route, onClose, inline =
 
   if (inline) return chatContent;
 
-  return (
+  // Portaled to <body> rather than rendered in place: a `position: fixed`
+  // overlay only escapes to the viewport if none of its ancestors compute a
+  // transform. Any ancestor with a CSS animation touching `transform` (e.g.
+  // `.animate-rise`) settles at `matrix(1,0,0,1,0,0)`, not the literal
+  // keyword `none` — and per spec that still creates a containing block,
+  // shrinking and mispositioning this overlay to the ancestor's box instead
+  // of the full screen. Portaling sidesteps the issue regardless of which
+  // component (or which of its ancestors' animations) renders GroupChat.
+  return createPortal(
     <div className="chat-overlay">
       <div className="chat-backdrop" onClick={onClose} />
       {chatContent}
-    </div>
+    </div>,
+    document.body
   );
 }

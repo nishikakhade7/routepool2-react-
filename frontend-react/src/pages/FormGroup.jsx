@@ -4,7 +4,8 @@ import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import MatchCard from '../components/MatchCard';
 import CustomTimePicker from '../components/CustomTimePicker';
-import { getNodes, requestRide, getMatches, USE_MOCK_MATCHING } from '../api/client';
+import { getNodes } from '../api/client';
+import { runMatchingFlow } from '../api/matching';
 
 export default function FormGroup() {
   // 'form' | 'searching' | 'results'
@@ -44,30 +45,6 @@ export default function FormGroup() {
 
     setStage('searching');
 
-    if (USE_MOCK_MATCHING) {
-      // Simulate stages
-      await new Promise(r => setTimeout(r, 1500));
-      setStage('grouping');
-      await new Promise(r => setTimeout(r, 1500));
-      
-      // TODO: Replace this simulated match with real matching/fare logic when USE_MOCK_MATCHING is false
-      setMatches([{
-        groupKey: 'mock1',
-        isMock: true,
-        score: 0.98,
-        pickupNode: { name: pickupText, shortName: pickupText },
-        distanceKm: 8.5,
-        totalFare: 150,
-        departureTime: new Date().toISOString(),
-        members: [
-          { isYou: true, name: 'You', initials: 'YOU', dropNode: { name: dropText, shortName: dropText }, fareShare: 85, soloFare: 150, dropDistanceKm: 5.2 },
-          { name: 'Student 2', initials: 'S2', dropNode: { name: dropText, shortName: dropText }, fareShare: 65, dropDistanceKm: 3.1 }
-        ]
-      }]);
-      setStage('results');
-      return;
-    }
-
     // Combine today's date with the HH:MM value from the time input to get an ISO string.
     const today = new Date();
     const [hours, minutes] = pickupTime.split(':').map(Number);
@@ -75,21 +52,14 @@ export default function FormGroup() {
     const pickupISO = pickupDate.toISOString();
 
     try {
-      // (This would normally use pickupId and dropId, which we've removed, 
-      // but keeping the block intact behind the flag as requested)
-      const req = await requestRide({
-        pickupNodeId: pickupText, // Mock mapping
-        dropNodeId: dropText, // Mock mapping
+      const { requestId, matches } = await runMatchingFlow({
+        pickupText,
+        dropText,
         pickupTime: pickupISO,
+        onStageChange: setStage,
       });
-      setMyRequestId(req.id);
-
-      await new Promise(r => setTimeout(r, 1500));
-      setStage('grouping');
-      await new Promise(r => setTimeout(r, 1500));
-
-      const m = await getMatches(req.id);
-      setMatches(m);
+      setMyRequestId(requestId);
+      setMatches(matches);
       setStage('results');
     } catch (e) {
       setFormError(e.message);

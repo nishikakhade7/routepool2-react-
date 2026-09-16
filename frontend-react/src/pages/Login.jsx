@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { sendOtp, verifyOtp } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import Spinner from '../components/Spinner';
+import { ALLOWED_EMAIL_DOMAIN } from '../constants';
 
-const DOMAIN = `@${import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN || 'spit.ac.in'}`;
+const DOMAIN = `@${ALLOWED_EMAIL_DOMAIN}`;
 const KEYS = ['1','2','3','4','5','6','7','8','9','←','0','✓'];
 
 export default function Login() {
