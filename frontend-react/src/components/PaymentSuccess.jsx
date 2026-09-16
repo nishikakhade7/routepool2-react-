@@ -2,14 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import VisionBadge from './VisionBadge';
 import GroupChat from './GroupChat';
-
-const REF_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
-
-function generateReceiptRef() {
-  let s = '';
-  for (let i = 0; i < 6; i++) s += REF_CHARS[Math.floor(Math.random() * REF_CHARS.length)];
-  return `RP-${s}`;
-}
+import { formatFare } from '../utils/formatFare';
 
 function formatClock(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);
@@ -19,13 +12,16 @@ function formatClock(totalSeconds) {
 
 /**
  * Post-payment success screen: driver ETA countdown (Phase 2 vision, same as
- * the rest of this flow), a receipt built from the real matched group's
- * numbers, and navigation to the rest of the app.
+ * the rest of this flow — only ticks once getAssignedDriver() returns a real
+ * numeric ETA; a static placeholder box is shown otherwise), a receipt built
+ * from the real matched group's numbers, and navigation to the rest of the app.
  *
  * @param {object} props
- * @param {object} props.driver          Picked driver (vision only).
- * @param {number} props.amount          Real fare share, already agreed.
- * @param {number} props.tripTotal       Real group total fare.
+ * @param {object} props.driver          From getAssignedDriver() (vision-only
+ *   placeholder object today, real driver data once the backend endpoint exists).
+ * @param {number|string} props.amount   Real fare share, or a mock field-name
+ *   placeholder string (USE_MOCK_MATCHING) — formatFare() renders whichever.
+ * @param {number|string} props.tripTotal  Same real-or-placeholder deal.
  * @param {string} props.paymentMethodLabel
  * @param {string} [props.pickupText]
  * @param {string|null} [props.groupId]  Chat group id (null disables chat).
@@ -33,19 +29,24 @@ function formatClock(totalSeconds) {
 export default function PaymentSuccess({ driver, amount, tripTotal, paymentMethodLabel, pickupText, groupId }) {
   const navigate = useNavigate();
   const [chatOpen, setChatOpen] = useState(false);
-  const [receiptRef] = useState(generateReceiptRef); // fresh every mount, stable across re-renders
 
-  const [totalSeconds] = useState(() => Math.max(1, Math.round((driver?.etaMinutes ?? 4) * 60)));
+  // Only the real getAssignedDriver() branch returns a numeric etaMinutes —
+  // the mock branch returns the placeholder string "ETA". A live countdown
+  // built on a placeholder would itself become a realistic-looking fake
+  // value (arguably more so than any static label), so it only ticks once
+  // there's a real ETA to count down from; otherwise a static box is shown.
+  const hasRealEta = typeof driver?.etaMinutes === 'number';
+  const [totalSeconds] = useState(() => Math.max(1, Math.round((hasRealEta ? driver.etaMinutes : 4) * 60)));
   const [secondsLeft, setSecondsLeft] = useState(totalSeconds);
-  const arrived = secondsLeft <= 0;
+  const arrived = hasRealEta && secondsLeft <= 0;
 
   useEffect(() => {
-    if (arrived) return;
+    if (!hasRealEta || arrived) return;
     const interval = setInterval(() => {
       setSecondsLeft((s) => (s <= 1 ? 0 : s - 1));
     }, 1000);
     return () => clearInterval(interval);
-  }, [arrived]);
+  }, [hasRealEta, arrived]);
 
   const fraction = secondsLeft / totalSeconds;
   const timerColor = fraction <= 1 / 6 ? '#FF9A8B' : fraction <= 0.5 ? '#F7C15B' : '#8FE3C4';
@@ -69,24 +70,37 @@ export default function PaymentSuccess({ driver, amount, tripTotal, paymentMetho
       </div>
 
       <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 42, letterSpacing: '-.04em', margin: '0 0 10px' }}>
-        Paid ₹{amount.toFixed(0)}
+        Paid {formatFare(amount)}
       </h1>
       <p style={{ margin: '0 auto 28px', fontSize: 15.5, color: 'rgba(33,28,38,.58)', maxWidth: 420 }}>
         {driver?.vehicle} booked with {driver?.name} · {driver?.plate}. Meet your group at {pickupText || 'the pickup point'}.
       </p>
 
       <div className="card-dark" style={{ textAlign: 'left', marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 60, letterSpacing: '-.05em', lineHeight: 1, color: timerColor, fontVariantNumeric: 'tabular-nums' }}>
-            {formatClock(secondsLeft)}
-          </span>
-          <span style={{ font: '600 13px Karla,sans-serif', color: arrived ? '#8FE3C4' : 'rgba(253,250,244,.72)', maxWidth: 200, lineHeight: 1.35 }}>
-            {arrived ? `${driver?.name} has arrived — find your group` : `until ${driver?.name} reaches pickup`}
-          </span>
-        </div>
-        <div className="progress-track" style={{ background: 'rgba(253,250,244,.2)' }}>
-          <div className="progress-fill" style={{ width: `${progressPct}%`, background: timerColor }} />
-        </div>
+        {hasRealEta ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 60, letterSpacing: '-.05em', lineHeight: 1, color: timerColor, fontVariantNumeric: 'tabular-nums' }}>
+                {formatClock(secondsLeft)}
+              </span>
+              <span style={{ font: '600 13px Karla,sans-serif', color: arrived ? '#8FE3C4' : 'rgba(253,250,244,.72)', maxWidth: 200, lineHeight: 1.35 }}>
+                {arrived ? `${driver?.name} has arrived — find your group` : `until ${driver?.name} reaches pickup`}
+              </span>
+            </div>
+            <div className="progress-track" style={{ background: 'rgba(253,250,244,.2)' }}>
+              <div className="progress-fill" style={{ width: `${progressPct}%`, background: timerColor }} />
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 60, letterSpacing: '-.05em', lineHeight: 1 }}>
+              {driver?.etaMinutes ?? 'ETA'}
+            </span>
+            <span style={{ font: '600 13px Karla,sans-serif', color: 'rgba(253,250,244,.72)', maxWidth: 200, lineHeight: 1.35 }}>
+              until {driver?.name} reaches pickup
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 20, textAlign: 'left' }}>
@@ -94,7 +108,7 @@ export default function PaymentSuccess({ driver, amount, tripTotal, paymentMetho
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 600 }}>
             <span style={{ color: 'rgba(33,28,38,.6)' }}>Reference</span>
-            <span style={{ fontWeight: 700 }}>{receiptRef}</span>
+            <span style={{ fontWeight: 700 }}>Reference</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 600 }}>
             <span style={{ color: 'rgba(33,28,38,.6)' }}>Method</span>
@@ -102,11 +116,11 @@ export default function PaymentSuccess({ driver, amount, tripTotal, paymentMetho
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 600 }}>
             <span style={{ color: 'rgba(33,28,38,.6)' }}>Trip total</span>
-            <span style={{ fontWeight: 700 }}>₹{tripTotal.toFixed(0)}</span>
+            <span style={{ fontWeight: 700 }}>{formatFare(tripTotal)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid rgba(33,28,38,.08)', font: '700 15px Familjen Grotesk,sans-serif' }}>
             <span>Your share</span>
-            <span>₹{amount.toFixed(0)}</span>
+            <span>{formatFare(amount)}</span>
           </div>
         </div>
       </div>

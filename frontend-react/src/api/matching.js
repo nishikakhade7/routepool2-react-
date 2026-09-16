@@ -7,18 +7,56 @@ import { requestRide, getMatches, USE_MOCK_MATCHING } from './client';
 
 const STAGE_DELAY_MS = 1500;
 
+// Deterministic string hash so the same pickup/drop text always produces the
+// same mock route distances (stable across re-renders/retries), while
+// different text produces different distances.
+function hashSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+// Deliberately field-name placeholders ("Trip Total", ...) rather than
+// realistic-looking fake fare numbers — same reasoning as PLACEHOLDER_DRIVER
+// in mockData/drivers.js: no real fare-splitting backend call happens on
+// this path (see USE_MOCK_MATCHING below), so a plausible-looking number
+// here would risk being mistaken for a real computed fare. Rendering code
+// (formatFare in utils/formatFare.js) passes these through as plain text;
+// once USE_MOCK_MATCHING is flipped off, the real backend's numeric
+// fareShare/totalFare/soloFare flow through the same fields and render as
+// currency automatically — no component changes needed.
+const PLACEHOLDER_FARE = {
+  yourShare: 'Your Share',
+  riderShare: 'Rider Share',
+  tripTotal: 'Trip Total',
+  soloFare: 'Solo Fare',
+};
+
+// Builds a plausible two-stop shared route from the free-text pickup/drop
+// (Book.jsx has no real node graph to measure yet) so distance-based fields
+// (distanceKm, dropDistanceKm) still vary sensibly by route; the fare
+// figures themselves stay placeholder text since there's no real fare-split
+// computation behind this mock path.
 function buildMockMatch(pickupText, dropText) {
+  const seed = hashSeed(`${pickupText}|${dropText}`);
+  // Student 2 drops off first (shorter leg), You continue further — mirrors
+  // a real pooled route where the shared path telescopes outward.
+  const studentDropKm = +(2 + (seed % 400) / 100).toFixed(1); // 2.0 - 5.9 km
+  const yourDropKm = +(studentDropKm + 1.5 + ((seed >>> 8) % 500) / 100).toFixed(1); // +1.5 - 6.49 km more
+
   return {
     groupKey: 'mock1',
     isMock: true,
     score: 0.98,
     pickupNode: { name: pickupText, shortName: pickupText },
-    distanceKm: 8.5,
-    totalFare: 150,
+    distanceKm: yourDropKm,
+    totalFare: PLACEHOLDER_FARE.tripTotal,
     departureTime: new Date().toISOString(),
     members: [
-      { isYou: true, name: 'You', initials: 'YOU', dropNode: { name: dropText, shortName: dropText }, fareShare: 85, soloFare: 150, dropDistanceKm: 5.2 },
-      { name: 'Student 2', initials: 'S2', dropNode: { name: dropText, shortName: dropText }, fareShare: 65, dropDistanceKm: 3.1 },
+      { isYou: true, name: 'You', initials: 'YOU', dropNode: { name: dropText, shortName: dropText }, fareShare: PLACEHOLDER_FARE.yourShare, soloFare: PLACEHOLDER_FARE.soloFare, dropDistanceKm: yourDropKm },
+      { name: 'Student 2', initials: 'S2', dropNode: { name: dropText, shortName: dropText }, fareShare: PLACEHOLDER_FARE.riderShare, dropDistanceKm: studentDropKm },
     ],
   };
 }

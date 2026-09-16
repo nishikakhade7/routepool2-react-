@@ -4,6 +4,8 @@
  * and structured error throwing for all backend calls.
  */
 
+import { PLACEHOLDER_DRIVER } from '../mockData/drivers';
+
 const BASE = '/api';
 
 export const USE_MOCK_MATCHING = true;
@@ -105,4 +107,30 @@ export function getChat(groupId) {
 
 export function postChat(groupId, message) {
   return request('POST', `/groups/${groupId}/chat`, { message });
+}
+
+// ---- Driver assignment -----------------------------------
+// Expected real response shape:
+// { name: string, rating: number, vehicle: string, plateNumber: string, etaMinutes: number }
+/**
+ * Same mock-now/real-later gating as runMatchingFlow's USE_MOCK_MATCHING
+ * branch in api/matching.js — flip that one flag once the backend
+ * implements GET /api/rides/:groupId/driver, no call sites need to change.
+ *
+ * The mock branch returns PLACEHOLDER_DRIVER as-is (field-name strings like
+ * "Rating"/"ETA", not realistic fake values) — callers that format these for
+ * display (e.g. `rating.toFixed(1)`) must check `typeof` first, since only
+ * the real branch's response is actually numeric.
+ *
+ * @param {string} groupId
+ * @returns {Promise<{ name: string, rating: number|string, vehicle: string, plate: string, etaMinutes: number|string }>}
+ */
+export async function getAssignedDriver(groupId) {
+  if (USE_MOCK_MATCHING) {
+    return PLACEHOLDER_DRIVER;
+  }
+  const data = await request('GET', `/rides/${groupId}/driver`);
+  // Normalize the wire field name (plateNumber) to `plate`, which is what
+  // Book.jsx/BookingConfirmation.jsx already read — callers don't change.
+  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes };
 }

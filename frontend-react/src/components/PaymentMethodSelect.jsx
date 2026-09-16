@@ -1,22 +1,13 @@
 import { useState } from 'react';
 import VisionBadge from './VisionBadge';
-
-// No real payment gateway is integrated — selecting a method only ever leads
-// to a fake success state, never a real transaction. The "detail" lines below
-// (UPI handle, wallet balance, masked card number) are generic placeholder
-// text, not real data tied to the logged-in user — there's no real UPI/
-// wallet/card-storage system behind this app.
-const PAYMENT_METHODS = [
-  { id: 'upi', label: 'UPI', tag: 'UPI', detail: 'you@upi · instant' },
-  { id: 'wallet', label: 'RoutePool wallet', tag: '₹', detail: 'Balance ₹340' },
-  { id: 'card', label: 'Card', tag: 'CARD', detail: '•••• 4417 · instant' },
-  { id: 'cash', label: 'Cash', tag: 'CASH', detail: 'Pay the driver directly' },
-];
+import { PAYMENT_METHODS } from '../mockData/paymentMethods';
+import { formatFare } from '../utils/formatFare';
 
 /**
  * @param {object} props
- * @param {number} props.amount    The rider's own fare share — real value
- *   from the matched group, not invented here.
+ * @param {number|string} props.amount  The rider's own fare share — a real
+ *   number from the matched group, or a mock field-name placeholder string
+ *   (USE_MOCK_MATCHING) — formatFare() renders whichever it gets.
  * @param {number} [props.savings] Real solo-fare-minus-share savings, same
  *   formula MatchCard already uses — 0/undefined hides the savings line.
  * @param {string} [props.vehicleName]  Real picked-driver vehicle name.
@@ -44,11 +35,11 @@ export default function PaymentMethodSelect({ amount, savings = 0, vehicleName, 
           Amount due
         </div>
         <div style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 64, letterSpacing: '-.05em', lineHeight: 1 }}>
-          ₹{amount.toFixed(0)}
+          {formatFare(amount)}
         </div>
-        {savings > 0 && (
+        {typeof savings === 'number' && savings > 0 && (
           <div style={{ fontSize: 13.5, color: '#8FE3C4', fontWeight: 700, marginTop: 8 }}>
-            You save ₹{savings.toFixed(0)} versus riding solo
+            You save {formatFare(savings)} versus riding solo
           </div>
         )}
       </div>
