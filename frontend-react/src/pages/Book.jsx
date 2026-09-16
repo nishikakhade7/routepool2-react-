@@ -5,9 +5,9 @@ import RouteVisual from '../components/RouteVisual';
 import BookingConfirmation from '../components/BookingConfirmation';
 import PaymentMethodSelect from '../components/PaymentMethodSelect';
 import PaymentSuccess from '../components/PaymentSuccess';
-import { DEMO_GROUP_ID, joinGroup } from '../api/client';
+import { DEMO_GROUP_ID, joinGroup, getAssignedDriver } from '../api/client';
 import { runMatchingFlow } from '../api/matching';
-import { pickRandomDriver } from '../data/drivers';
+import { formatRating, formatEta } from '../utils/formatDriver';
 
 // Reference-design widths per stage (design/RoutePool.dc.html screens 10-15):
 // the location form and the full booking summary use the page's full grid
@@ -93,8 +93,9 @@ export default function Book() {
     if (matchingStartedRef.current) return; // already in flight, don't double-start
     matchingStartedRef.current = true;
 
-    runMatchingFlow({ pickupText, dropText, onStageChange: setStage })
-      .then(({ requestId, matches }) => {
+    (async () => {
+      try {
+        const { requestId, matches } = await runMatchingFlow({ pickupText, dropText, onStageChange: setStage });
         if (!isMountedRef.current) return;
         const best = [...matches].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null;
         if (!best) {
@@ -104,15 +105,21 @@ export default function Book() {
         }
         setMyRequestId(requestId);
         setGroup(best);
-        setDriver(pickRandomDriver());
+        // groupKey is the one identifier both mock and real matches already
+        // carry (backend derives it from the sorted member request ids) —
+        // the closest thing to a group id available before the group is
+        // actually created via joinGroup.
+        const assignedDriver = await getAssignedDriver(best.groupKey);
+        if (!isMountedRef.current) return;
+        setDriver(assignedDriver);
         setStage('driverAssigned');
-      })
-      .catch((e) => {
+      } catch (e) {
         console.error('[Book] runMatchingFlow failed:', e);
         if (!isMountedRef.current) return;
         setBookError(e.message || 'Something went wrong while finding a match. Please try again.');
         setStage('where');
-      });
+      }
+    })();
   }, [stage, pickupText, dropText]);
 
   // Locks in the auto-picked match for real (non-mock) groups, the same way
@@ -135,7 +142,10 @@ export default function Book() {
 
   const youMember = group?.members?.find(m => m.isYou);
   const youShare = youMember?.fareShare ?? group?.totalFare ?? 0;
-  const youSave = Math.max(0, (youMember?.soloFare ?? 0) - youShare);
+  // youShare/soloFare may be mock placeholder strings (USE_MOCK_MATCHING) —
+  // same hasRealSavings gate as BookingConfirmation.jsx/MatchCard.jsx.
+  const hasRealSavings = typeof youShare === 'number' && typeof youMember?.soloFare === 'number';
+  const youSave = hasRealSavings ? Math.max(0, youMember.soloFare - youShare) : 0;
   const chatGroupId = group?.isMock ? DEMO_GROUP_ID : joinedGroupId;
 
   return (
@@ -287,13 +297,13 @@ export default function Book() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                     <span style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{driver.name}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#F4EEE3', font: '700 12px Karla,sans-serif', padding: '5px 9px', borderRadius: 8 }}>★ {driver.rating.toFixed(1)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#F4EEE3', font: '700 12px Karla,sans-serif', padding: '5px 9px', borderRadius: 8 }}>★ {formatRating(driver.rating)}</span>
                   </div>
                   <div style={{ fontSize: 13.5, color: 'rgba(33,28,38,.55)', fontWeight: 600, marginTop: 4 }}>{driver.vehicle}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div className="input-label" style={{ marginBottom: 3 }}>ETA</div>
-                  <div style={{ font: '700 28px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{driver.etaMinutes} min</div>
+                  <div style={{ font: '700 28px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{formatEta(driver.etaMinutes)}</div>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, paddingTop: 22, borderTop: '1px solid rgba(33,28,38,.08)' }}>

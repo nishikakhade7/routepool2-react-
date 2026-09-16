@@ -3,6 +3,8 @@ import VisionBadge from './VisionBadge';
 import RouteVisual from './RouteVisual';
 import GroupChat from './GroupChat';
 import { ALLOWED_EMAIL_DOMAIN } from '../constants';
+import { formatRating, formatEta } from '../utils/formatDriver';
+import { formatFare } from '../utils/formatFare';
 
 function initialsOf(name) {
   return name.split(' ').map((p) => p[0]).join('');
@@ -10,10 +12,14 @@ function initialsOf(name) {
 
 /**
  * @param {object} props
- * @param {object} props.group   Real matched-group shape from runMatchingFlow
- *   (same object FormGroup/MatchCard consume) — members, fare shares, and
- *   totalFare here are the actual computed values, not invented here.
- * @param {object} props.driver  A picked entry from DRIVER_POOL (vision only).
+ * @param {object} props.group   Matched-group shape from runMatchingFlow
+ *   (same object FormGroup/MatchCard consume). fareShare/totalFare/soloFare
+ *   are real numbers once matched against the real backend; the mock branch
+ *   (USE_MOCK_MATCHING) puts field-name placeholder strings in these same
+ *   fields instead — formatFare() below renders whichever it gets.
+ * @param {object} props.driver  From getAssignedDriver() (api/client.js) — a
+ *   field-name placeholder object in mock mode, real driver data once the
+ *   backend endpoint exists.
  * @param {string|null} [props.groupId]  Real/demo chat group id, or null if
  *   this is a real (non-mock) match the user hasn't joined yet — chat isn't
  *   reachable until then, same restriction MatchCard already applies.
@@ -26,7 +32,12 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
   const totalFare = group?.totalFare ?? 0;
   const youMember = members.find((m) => m.isYou);
   const share = youMember?.fareShare ?? totalFare;
-  const save = Math.max(0, (youMember?.soloFare ?? 0) - share);
+  // "You save" needs real numbers on both sides of the subtraction — a
+  // placeholder string can't be subtracted. Stays hidden (see the `save !=
+  // null` check below) until the real backend supplies both, same as
+  // PaymentSuccess.jsx's hasRealEta gate.
+  const hasRealSavings = typeof share === 'number' && typeof youMember?.soloFare === 'number';
+  const save = hasRealSavings ? Math.max(0, youMember.soloFare - share) : null;
   const fromName = group?.pickupNode?.name ?? 'Pickup';
   const toName = members.slice(-1)[0]?.dropNode?.name ?? '—';
   const route = `${fromName} → ${toName}`;
@@ -40,12 +51,12 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
             Confirm your booking
           </h1>
           <p style={{ margin: 0, fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
-            {route} · {members.length} riders · {driver.name} arriving in {driver.etaMinutes} min
+            {route} · {members.length} riders · {driver.name} arriving in {formatEta(driver.etaMinutes)}
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="input-label" style={{ marginBottom: 4 }}>Your share</div>
-          <div style={{ font: '700 34px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>₹{share.toFixed(0)}</div>
+          <div style={{ font: '700 34px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{formatFare(share)}</div>
         </div>
       </div>
 
@@ -58,14 +69,14 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.025em' }}>
-                {driver.name} · ★ {driver.rating.toFixed(1)}
+                {driver.name} · ★ {formatRating(driver.rating)}
               </div>
               <div style={{ fontSize: 13.5, color: 'rgba(33,28,38,.55)', fontWeight: 600, marginTop: 3 }}>
                 {driver.vehicle} · {driver.plate}
               </div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{driver.etaMinutes} min</div>
+              <div style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{formatEta(driver.etaMinutes)}</div>
               <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 700, marginTop: 2 }}>to {fromName}</div>
             </div>
           </div>
@@ -116,7 +127,7 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
                     </span>
                   </span>
                   <span style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif' }}>₹{m.fareShare?.toFixed(0) ?? '—'}</span>
+                    <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif' }}>{formatFare(m.fareShare) ?? '—'}</span>
                   </span>
                 </div>
               ))}
@@ -172,18 +183,18 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
               <span style={{ color: 'rgba(33,28,38,.6)' }}>Trip total</span>
-              <span style={{ fontWeight: 700 }}>₹{totalFare.toFixed(0)}</span>
+              <span style={{ fontWeight: 700 }}>{formatFare(totalFare)}</span>
             </div>
-            {save > 0 && (
+            {hasRealSavings && save > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
                 <span style={{ color: 'rgba(33,28,38,.6)' }}>You save</span>
-                <span style={{ fontWeight: 700, color: '#0F8A5F' }}>−₹{save.toFixed(0)}</span>
+                <span style={{ fontWeight: 700, color: '#0F8A5F' }}>−{formatFare(save)}</span>
               </div>
             )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 17, borderTop: '1px solid rgba(33,28,38,.08)' }}>
             <span style={{ font: '700 15px Familjen Grotesk,sans-serif' }}>You pay</span>
-            <span style={{ font: '700 30px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>₹{share.toFixed(0)}</span>
+            <span style={{ font: '700 30px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{formatFare(share)}</span>
           </div>
           <button className="btn-primary" style={{ marginTop: 22 }} onClick={onContinue}>Continue to payment</button>
           <p style={{ margin: '14px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'rgba(33,28,38,.5)', textAlign: 'center' }}>

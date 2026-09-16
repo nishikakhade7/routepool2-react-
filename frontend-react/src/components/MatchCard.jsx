@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Spinner from './Spinner';
 import GroupChat from './GroupChat';
 import { joinGroup, DEMO_GROUP_ID } from '../api/client';
+import { formatFare } from '../utils/formatFare';
 
 // Deterministic avatar colors based on name hash
 const AVATAR_PALETTE = [
@@ -62,8 +63,11 @@ export default function MatchCard({ group, index, myRideRequestId }) {
   const departureFmt = fmt(group.departureTime);
   const totalFare = group.totalFare ?? 0;
   const youPay = youMember?.fareShare ?? 0;
-  const youSolo = youMember?.soloFare ?? 0;
-  const youSave = Math.max(0, youSolo - youPay);
+  const youSolo = youMember?.soloFare;
+  // See BookingConfirmation.jsx's hasRealSavings — youPay/youSolo may be
+  // mock placeholder strings, which can't be subtracted.
+  const hasRealSavings = typeof youPay === 'number' && typeof youSolo === 'number';
+  const youSave = hasRealSavings ? Math.max(0, youSolo - youPay) : null;
 
   return (
     <>
@@ -124,7 +128,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
                 </span>
                 <span style={{ textAlign: 'right', flexShrink: 0, display: 'block' }}>
                   <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em' }}>
-                    ₹{m.fareShare?.toFixed(0) ?? '—'}
+                    {formatFare(m.fareShare) ?? '—'}
                   </span>
                   <span style={{ display: 'block', font: '600 10.5px Karla,sans-serif', color: 'rgba(33,28,38,.45)', marginTop: 2 }}>
                     {m.dropDistanceKm?.toFixed(1) ?? '?'} km
@@ -162,16 +166,16 @@ export default function MatchCard({ group, index, myRideRequestId }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, padding: '18px 0', borderTop: '1px solid rgba(33,28,38,.08)', borderBottom: '1px solid rgba(33,28,38,.08)', marginBottom: 20 }}>
           <div>
             <div style={{ font: '600 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(33,28,38,.42)', marginBottom: 4 }}>Total fare</div>
-            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>₹{totalFare.toFixed(0)}</div>
+            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{formatFare(totalFare)}</div>
           </div>
           <div>
             <div style={{ font: '600 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(33,28,38,.42)', marginBottom: 4 }}>You pay</div>
-            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>₹{youPay.toFixed(0)}</div>
-            <div style={{ font: '600 10.5px Karla,sans-serif', color: 'rgba(33,28,38,.45)', marginTop: 3 }}>vs ₹{youSolo.toFixed(0)} solo</div>
+            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{formatFare(youPay)}</div>
+            <div style={{ font: '600 10.5px Karla,sans-serif', color: 'rgba(33,28,38,.45)', marginTop: 3 }}>vs {formatFare(youSolo) ?? '—'} solo</div>
           </div>
           <div>
             <div style={{ font: '600 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(33,28,38,.42)', marginBottom: 4 }}>You save</div>
-            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', color: '#0F8A5F' }}>₹{youSave.toFixed(0)}</div>
+            <div style={{ font: '700 19px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', color: '#0F8A5F' }}>{hasRealSavings ? formatFare(youSave) : '—'}</div>
           </div>
         </div>
 
