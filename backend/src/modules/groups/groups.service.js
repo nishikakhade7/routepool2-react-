@@ -1,4 +1,8 @@
-const { withTransaction } = process.env.USE_MOCK_DB === 'true' ? require('../../db/mockStore') : require('../../config/db');
+// withTransaction is backed by Prisma.$transaction when USE_MOCK_DB=false,
+// or by the mock store's no-op transaction when in mock mode.
+const { withTransaction } = process.env.USE_MOCK_DB === 'true'
+  ? require('../../db/mockStore')
+  : require('../../config/db');
 const groupModel = require('../../models/group.model');
 const groupMemberModel = require('../../models/groupMember.model');
 const rideRequestModel = require('../../models/rideRequest.model');

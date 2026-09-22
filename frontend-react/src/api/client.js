@@ -8,7 +8,10 @@ import { PLACEHOLDER_DRIVER } from '../mockData/drivers';
 
 const BASE = '/api';
 
-export const USE_MOCK_MATCHING = true;
+// Set to false to use real backend matching (requires backend + PostgreSQL running)
+// Set to true for purely frontend demos without a backend
+export const USE_MOCK_MATCHING = false;
+
 
 // Sentinel group id used by the mock-matching demo flow (FormGroup, Book,
 // MatchCard, GroupChat) to bypass the real chat API with fake in-memory

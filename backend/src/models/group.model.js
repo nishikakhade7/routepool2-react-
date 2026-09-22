@@ -2,39 +2,47 @@ const mock = process.env.USE_MOCK_DB === 'true';
 if (mock) {
   module.exports = require('../db/mockStore').groupModel;
 } else {
-  const { pool } = require('../config/db');
+  const prisma = require('../config/prisma');
 
-  async function create({ pickupNodeId, departureTime, totalFare }, client = pool) {
-    const { rows } = await client.query(
-      `INSERT INTO groups (pickup_node_id, departure_time, total_fare, status)
-       VALUES ($1, $2, $3, 'forming') RETURNING *`,
-      [pickupNodeId, departureTime, totalFare]
-    );
-    return rows[0];
+  async function create({ pickupNodeId, departureTime, totalFare }, tx) {
+    const client = tx || prisma;
+    return client.group.create({
+      data: {
+        pickup_node_id: pickupNodeId,
+        departure_time: new Date(departureTime),
+        total_fare:     totalFare,
+        status:         'forming',
+      },
+    });
   }
 
   async function findById(id) {
-    const { rows } = await pool.query('SELECT * FROM groups WHERE id = $1', [id]);
-    return rows[0] || null;
+    return prisma.group.findUnique({ where: { id } });
   }
 
-  async function updateTotalFare(id, totalFare, client = pool) {
-    const { rows } = await client.query(
-      'UPDATE groups SET total_fare = $2 WHERE id = $1 RETURNING *',
-      [id, totalFare]
-    );
-    return rows[0];
+  async function updateTotalFare(id, totalFare, tx) {
+    const client = tx || prisma;
+    return client.group.update({
+      where: { id },
+      data:  { total_fare: totalFare },
+    });
   }
 
+  /**
+   * Returns the group_id of any existing group whose members' ride_request_ids
+   * exactly match `rideRequestIds` (sorted), or null if none exists.
+   *
+   * Uses $queryRaw for the array_agg / HAVING comparison — not expressible
+   * in Prisma's query API.
+   */
   async function findByExactRideRequestSet(rideRequestIds) {
     const sorted = [...rideRequestIds].sort();
-    const { rows } = await pool.query(
-      `SELECT gm.group_id
-       FROM group_members gm
-       GROUP BY gm.group_id
-       HAVING array_agg(gm.ride_request_id ORDER BY gm.ride_request_id) = $1::uuid[]`,
-      [sorted]
-    );
+    const rows = await prisma.$queryRaw`
+      SELECT gm.group_id::text AS group_id
+      FROM group_members gm
+      GROUP BY gm.group_id
+      HAVING array_agg(gm.ride_request_id ORDER BY gm.ride_request_id) = ${sorted}::uuid[]
+    `;
     return rows[0]?.group_id || null;
   }
 

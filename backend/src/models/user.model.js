@@ -2,33 +2,27 @@ const mock = process.env.USE_MOCK_DB === 'true';
 if (mock) {
   module.exports = require('../db/mockStore').userModel;
 } else {
-  const { pool } = require('../config/db');
+  const prisma = require('../config/prisma');
 
   async function findByEmail(email) {
-    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    return rows[0] || null;
+    return prisma.user.findUnique({ where: { email } });
   }
 
   async function findById(id) {
-    const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    return rows[0] || null;
+    return prisma.user.findUnique({ where: { id } });
   }
 
   async function createVerified({ email, name, initials, branch }) {
-    const { rows } = await pool.query(
-      `INSERT INTO users (email, name, initials, branch, is_verified)
-       VALUES ($1, $2, $3, $4, true) RETURNING *`,
-      [email, name, initials, branch]
-    );
-    return rows[0];
+    return prisma.user.create({
+      data: { email, name, initials, branch, is_verified: true },
+    });
   }
 
   async function markVerified(id) {
-    const { rows } = await pool.query(
-      'UPDATE users SET is_verified = true WHERE id = $1 RETURNING *',
-      [id]
-    );
-    return rows[0];
+    return prisma.user.update({
+      where: { id },
+      data: { is_verified: true },
+    });
   }
 
   module.exports = { findByEmail, findById, createVerified, markVerified };

@@ -37,21 +37,25 @@ async function getStats(userId) {
       };
     }).filter(a => a.groupId);
   } else {
-    const { pool } = require('../../config/db');
-    const { rows: activity } = await pool.query(
-      `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
-              pn.name AS pickup_name,
-              dn.name AS drop_name, dn.short_name AS drop_short, rr.solo_fare
-       FROM group_members gm
-       JOIN groups g ON g.id = gm.group_id
-       JOIN ride_requests rr ON rr.id = gm.ride_request_id
-       JOIN nodes pn ON pn.id = rr.pickup_node_id
-       JOIN nodes dn ON dn.id = gm.drop_node_id
-       WHERE gm.user_id = $1
-       ORDER BY g.departure_time DESC
-       LIMIT 5`,
-      [userId]
-    );
+    const prisma = require('../../config/prisma');
+    const activity = await prisma.$queryRaw`
+      SELECT g.id         AS group_id,
+             g.departure_time,
+             g.status::text,
+             gm.fare_share,
+             pn.name      AS pickup_name,
+             dn.name      AS drop_name,
+             dn.short_name AS drop_short,
+             rr.solo_fare
+      FROM group_members gm
+      JOIN groups g       ON g.id  = gm.group_id
+      JOIN ride_requests rr ON rr.id = gm.ride_request_id
+      JOIN nodes pn       ON pn.id = rr.pickup_node_id
+      JOIN nodes dn       ON dn.id = gm.drop_node_id
+      WHERE gm.user_id = ${userId}::uuid
+      ORDER BY g.departure_time DESC
+      LIMIT 5
+    `;
     recentActivity = activity.map((a) => ({
       groupId:       a.group_id,
       pickupName:    a.pickup_name,
@@ -66,8 +70,8 @@ async function getStats(userId) {
   }
 
   return {
-    totalRides:     user.total_rides,
-    totalSavings:   Number(user.total_savings),
+    totalRides:   user.total_rides,
+    totalSavings: Number(user.total_savings),
     recentActivity,
   };
 }
@@ -76,10 +80,10 @@ async function getBusyRoutes() {
   const rows = await rideRequestModel.busyRoutes(5);
   const max = Math.max(1, ...rows.map((r) => r.count));
   return rows.map((r) => ({
-    name:     `${r.pickupName} → ${r.dropName}`,
-    dropShort: r.dropShort,
-    count:    r.count,
-    widthPct: Math.round((r.count / max) * 100),
+    name:      `${r.pickupName} → ${r.dropName}`,
+    dropShort:  r.dropShort,
+    count:      r.count,
+    widthPct:   Math.round((r.count / max) * 100),
   }));
 }
 
@@ -104,11 +108,11 @@ async function getHistory(userId) {
         });
 
       return {
-        groupId: g.id,
-        pickupName: pn.name || '—',
-        dropName: dn.name,
+        groupId:       g.id,
+        pickupName:    pn.name || '—',
+        dropName:      dn.name,
         departureTime: g.departure_time,
-        status: g.status,
+        status:        g.status,
         fareShare,
         soloFare,
         saved: +(soloFare - fareShare).toFixed(2),
@@ -119,24 +123,29 @@ async function getHistory(userId) {
     .sort((a, b) => new Date(b.departureTime) - new Date(a.departureTime));
   }
 
-  const { pool } = require('../../config/db');
-  const { rows } = await pool.query(
-    `SELECT g.id AS group_id, g.departure_time, g.status, gm.fare_share,
-            pn.name AS pickup_name,
-            dn.name AS drop_name, rr.solo_fare,
-            array_agg(u.initials ORDER BY u.name) FILTER (WHERE u.id != $1) AS co_riders
-     FROM group_members gm
-     JOIN groups g ON g.id = gm.group_id
-     JOIN ride_requests rr ON rr.id = gm.ride_request_id
-     JOIN nodes pn ON pn.id = rr.pickup_node_id
-     JOIN nodes dn ON dn.id = gm.drop_node_id
-     JOIN group_members gm2 ON gm2.group_id = g.id
-     JOIN users u ON u.id = gm2.user_id
-     WHERE gm.user_id = $1
-     GROUP BY g.id, g.departure_time, g.status, gm.fare_share, pn.name, dn.name, rr.solo_fare
-     ORDER BY g.departure_time DESC`,
-    [userId]
-  );
+  const prisma = require('../../config/prisma');
+  const rows = await prisma.$queryRaw`
+    SELECT g.id           AS group_id,
+           g.departure_time,
+           g.status::text,
+           gm.fare_share,
+           pn.name        AS pickup_name,
+           dn.name        AS drop_name,
+           rr.solo_fare,
+           array_agg(u.initials ORDER BY u.name)
+             FILTER (WHERE u.id != ${userId}::uuid) AS co_riders
+    FROM group_members gm
+    JOIN groups g         ON g.id   = gm.group_id
+    JOIN ride_requests rr ON rr.id  = gm.ride_request_id
+    JOIN nodes pn         ON pn.id  = rr.pickup_node_id
+    JOIN nodes dn         ON dn.id  = gm.drop_node_id
+    JOIN group_members gm2 ON gm2.group_id = g.id
+    JOIN users u           ON u.id  = gm2.user_id
+    WHERE gm.user_id = ${userId}::uuid
+    GROUP BY g.id, g.departure_time, g.status, gm.fare_share,
+             pn.name, dn.name, rr.solo_fare
+    ORDER BY g.departure_time DESC
+  `;
   return rows.map(r => ({
     groupId:       r.group_id,
     pickupName:    r.pickup_name,
@@ -162,16 +171,17 @@ async function getCampusStats() {
     return { totalUsers, totalPools, avgFare: +avgFare.toFixed(0), totalSavings: +totalSavings.toFixed(0) };
   }
 
-  const { pool } = require('../../config/db');
-  const [{ rows: [gs] }, { rows: [us] }] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS total_pools, AVG(total_fare) AS avg_fare FROM groups`),
-    pool.query(`SELECT COUNT(*) AS total_users, SUM(total_savings) AS total_savings FROM users`),
+  const prisma = require('../../config/prisma');
+  const [groupStats, userStats] = await Promise.all([
+    prisma.$queryRaw`SELECT COUNT(*)::int AS total_pools, AVG(total_fare) AS avg_fare FROM groups`,
+    prisma.$queryRaw`SELECT COUNT(*)::int AS total_users, SUM(total_savings) AS total_savings FROM users`,
   ]);
+
   return {
-    totalUsers:   Number(us.total_users),
-    totalPools:   Number(gs.total_pools),
-    avgFare:      +Number(gs.avg_fare || 0).toFixed(0),
-    totalSavings: Number(us.total_savings || 0),
+    totalUsers:   Number(userStats[0].total_users),
+    totalPools:   Number(groupStats[0].total_pools),
+    avgFare:      +Number(groupStats[0].avg_fare || 0).toFixed(0),
+    totalSavings: Number(userStats[0].total_savings || 0),
   };
 }
 

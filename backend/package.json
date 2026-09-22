@@ -1,14 +1,24 @@
 {
   "name": "routepool-backend",
   "version": "1.0.0",
-  "description": "RoutePool backend - Express + PostgreSQL/PostGIS API for graph-based ride pooling",
+  "description": "RoutePool backend - Express + PostgreSQL/PostGIS + Prisma ORM",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "db:init": "node scripts/initDb.js"
+    "db:init": "node scripts/initDb.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "node prisma/seed.js",
+    "db:push": "prisma db push",
+    "db:setup": "prisma generate && prisma db push && node prisma/seed.js"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "^7.9.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -19,6 +29,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "prisma": "^7.9.1"
   }
 }
