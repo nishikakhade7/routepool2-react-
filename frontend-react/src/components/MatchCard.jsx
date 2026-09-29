@@ -27,7 +27,12 @@ function fmt(isoStr) {
 
 const LINE_COLORS = ['#F2A230', '#8A2B6B', '#157F63', '#5B57E0'];
 
-export default function MatchCard({ group, index, myRideRequestId }) {
+/**
+ * @param {(group) => Promise<void>} [onSelect]  Book flow: picking the card hands
+ *   the group back to the page (which joins it and shows the confirm screen)
+ *   instead of joining here and navigating away (FormGroup flow).
+ */
+export default function MatchCard({ group, index, myRideRequestId, onSelect }) {
   const navigate = useNavigate();
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState(null);
@@ -43,6 +48,17 @@ export default function MatchCard({ group, index, myRideRequestId }) {
     if (joining || joinedGroup) return;
     setJoining(true);
     setJoinError(null);
+
+    if (onSelect) {
+      try {
+        await onSelect(group);
+      } catch (e) {
+        setJoinError(e.message);
+      } finally {
+        setJoining(false);
+      }
+      return;
+    }
 
     if (group.isMock) {
       setTimeout(() => {
@@ -63,6 +79,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
   }
 
   const departureFmt = fmt(group.departureTime);
+  const farthestDrop = [...(group.members ?? [])].sort((a, b) => (b.dropDistanceKm ?? 0) - (a.dropDistanceKm ?? 0))[0]?.dropNode;
   const totalFare = group.totalFare ?? 0;
   const youPay = youMember?.fareShare ?? 0;
   const youSolo = youMember?.soloFare;
@@ -101,7 +118,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
             padding: '6px 11px',
             borderRadius: 999,
           }}>
-            {isBest ? 'Best match' : `Score ${group.score?.toFixed(2) ?? '—'}`}
+            {isBest ? 'Best match' : typeof group.routeSimilarity === 'number' ? `${Math.round(group.routeSimilarity * 100)}% same route` : `Score ${group.score?.toFixed(2) ?? '—'}`}
           </span>
         </div>
 
@@ -156,12 +173,13 @@ export default function MatchCard({ group, index, myRideRequestId }) {
             {group.pickupNode?.shortName ?? 'PICKUP'}
           </span>
           <span style={{ position: 'absolute', right: '1%', bottom: 0, font: '700 10.5px Karla,sans-serif', letterSpacing: '.06em', color: 'rgba(33,28,38,.5)', textAlign: 'right' }}>
-            {group.members?.slice(-1)[0]?.dropNode?.shortName ?? 'DROP'}
+            {farthestDrop?.shortName ?? 'DROP'}
           </span>
         </div>
 
         <div style={{ fontSize: 13, color: 'rgba(33,28,38,.55)', fontWeight: 600, marginBottom: 20 }}>
           Departs {departureFmt} · {group.distanceKm?.toFixed(1) ?? '?'} km route
+          {typeof group.seatsLeft === 'number' && ` · ${group.seatsLeft} seat${group.seatsLeft === 1 ? '' : 's'} left after you`}
         </div>
 
         {/* Fare summary */}
@@ -211,11 +229,11 @@ export default function MatchCard({ group, index, myRideRequestId }) {
               onMouseLeave={e => e.currentTarget.style.transform = 'none'}
             >
               {joining ? <Spinner size="sm" light={!isBest} /> : null}
-              Request to join Group {index + 1}
+              {onSelect ? `Join this group · ${formatFare(youPay)}` : `Request to join Group ${index + 1}`}
             </button>
           )}
 
-          <button
+          {!onSelect && <button
             onClick={() => setChatOpen(true)}
             disabled={!(joinedGroup || group.isMock)}
             style={{
@@ -234,7 +252,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
               <path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-5 4v-4H6.5A2.5 2.5 0 014 13.5v-7z" stroke="#211C26" strokeWidth="1.9" strokeLinejoin="round"/>
             </svg>
             Message group
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -243,7 +261,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
         <GroupChat
           groupId={joinedGroup?.id || DEMO_GROUP_ID}
           groupName={`Group ${index + 1}`}
-          route={`${group.pickupNode?.name ?? 'Pickup'} → ${group.members?.slice(-1)[0]?.dropNode?.name ?? '—'}`}
+          route={`${group.pickupNode?.name ?? 'Pickup'} → ${farthestDrop?.name ?? '—'}`}
           onClose={() => setChatOpen(false)}
         />
       )}

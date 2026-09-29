@@ -64,5 +64,9 @@ if (mock) {
     return m !== null;
   }
 
-  module.exports = { add, listByGroup, listGroupIdsByUser, isMember };
+  async function remove(groupId, userId) {
+    return prisma.groupMember.delete({ where: { group_id_user_id: { group_id: groupId, user_id: userId } } });
+  }
+
+  module.exports = { add, listByGroup, listGroupIdsByUser, isMember, remove };
 }

@@ -137,7 +137,7 @@ export default function FormGroup() {
                     />
                   </div>
                   <div style={{ fontSize: 12, color: 'rgba(33,28,38,.45)', fontWeight: 600, marginTop: 8 }}>
-                    Riders within 5 minutes of your time will be matched with you.
+                    Riders within 10 minutes of your time, heading the same way, will be matched with you.
                   </div>
                 </div>
 
@@ -210,7 +210,7 @@ export default function FormGroup() {
               <div style={{ font: '700 18px Familjen Grotesk,sans-serif', marginBottom: 8, color: '#211C26' }}>
                 {groupStarted ? 'Group started!' : "No group on this route yet — you're the first"}
               </div>
-              <div>{groupStarted ? 'Students requesting this route within 5 minutes of your time will join it.' : 'Start a group and others heading your way will join.'}</div>
+              <div>{groupStarted ? 'Students requesting this route within 10 minutes of your time will join it.' : 'Start a group and others heading your way will join.'}</div>
               {!groupStarted && myRequestId && <button className="btn-accent" style={{ marginTop: 24 }} onClick={handleStartGroup}>Start a group</button>}
               {startError && <div className="error-msg-red" style={{ marginTop: 12 }}>{startError}</div>}
               <button className="btn-ghost" style={{ marginTop: 24 }} onClick={() => setStage('form')}>Back to form</button>

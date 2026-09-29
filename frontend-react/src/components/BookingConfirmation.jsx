@@ -5,6 +5,7 @@ import GroupChat from './GroupChat';
 import { ALLOWED_EMAIL_DOMAIN } from '../constants';
 import { formatRating, formatEta } from '../utils/formatDriver';
 import { formatFare } from '../utils/formatFare';
+import { FareBreakupDetails } from './FareBreakup';
 
 function initialsOf(name) {
   return name.split(' ').map((p) => p[0]).join('');
@@ -17,15 +18,22 @@ function initialsOf(name) {
  *   are real numbers once matched against the real backend; the mock branch
  *   (USE_MOCK_MATCHING) puts field-name placeholder strings in these same
  *   fields instead — formatFare() below renders whichever it gets.
- * @param {object} props.driver  From getAssignedDriver() (api/client.js) — a
- *   field-name placeholder object in mock mode, real driver data once the
- *   backend endpoint exists.
+ * @param {object|null} [props.driver]  From getAssignedDriver(), or null before
+ *   the booking is confirmed (the driver card is hidden until then).
  * @param {string|null} [props.groupId]  Real/demo chat group id, or null if
  *   this is a real (non-mock) match the user hasn't joined yet — chat isn't
  *   reachable until then, same restriction MatchCard already applies.
  * @param {() => void} props.onContinue
+ * @param {string} [props.continueLabel]
+ * @param {() => void} [props.onLeave]  Shows "Can't make it? Leave group".
  */
-export default function BookingConfirmation({ group, driver, groupId, onContinue }) {
+export default function BookingConfirmation({ group, driver = null, groupId, onContinue, continueLabel = 'Continue to payment', onLeave }) {
+  const [busy, setBusy] = useState(false);
+  const run = (fn) => async () => {
+    if (busy || !fn) return;
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
   const [showWhy, setShowWhy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const members = group?.members ?? [];
@@ -39,7 +47,8 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
   const hasRealSavings = typeof share === 'number' && typeof youMember?.soloFare === 'number';
   const save = hasRealSavings ? Math.max(0, youMember.soloFare - share) : null;
   const fromName = group?.pickupNode?.name ?? 'Pickup';
-  const toName = members.slice(-1)[0]?.dropNode?.name ?? '—';
+  const toName = [...members].sort((a, b) => (b.dropDistanceKm ?? 0) - (a.dropDistanceKm ?? 0))[0]?.dropNode?.name ?? '—';
+  const seatsLeft = group?.seatsLeft;
   const route = `${fromName} → ${toName}`;
 
   return (
@@ -51,7 +60,8 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
             Confirm your booking
           </h1>
           <p style={{ margin: 0, fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
-            {route} · {members.length} riders · {driver.name} arriving in {formatEta(driver.etaMinutes)}
+            {route} · {members.length} rider{members.length === 1 ? '' : 's'}
+            {driver ? ` · ${driver.name} arriving in ${formatEta(driver.etaMinutes)}` : ''}
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -62,8 +72,8 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.25fr .75fr', gap: 22, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Driver / vehicle card — vision only */}
-          <div style={{ border: '1.5px solid #F2A230', borderRadius: 24, padding: '24px 26px', display: 'flex', alignItems: 'center', gap: 20, background: '#fff' }}>
+          {/* Driver / vehicle card — only once a driver is assigned */}
+          {driver && <div style={{ border: '1.5px solid #F2A230', borderRadius: 24, padding: '24px 26px', display: 'flex', alignItems: 'center', gap: 20, background: '#fff' }}>
             <div style={{ width: 60, height: 60, borderRadius: 19, background: '#F4EEE3', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 20px Familjen Grotesk,sans-serif', flexShrink: 0 }}>
               {initialsOf(driver.name)}
             </div>
@@ -79,7 +89,7 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
               <div style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{formatEta(driver.etaMinutes)}</div>
               <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 700, marginTop: 2 }}>to {fromName}</div>
             </div>
-          </div>
+          </div>}
 
           {/* Your group — real matched members */}
           <div className="card">
@@ -128,6 +138,9 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
                   </span>
                   <span style={{ textAlign: 'right', flexShrink: 0 }}>
                     <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif' }}>{formatFare(m.fareShare) ?? '—'}</span>
+                    {typeof m.dropDistanceKm === 'number' && (
+                      <span style={{ display: 'block', font: '600 10.5px Karla,sans-serif', color: 'rgba(33,28,38,.45)', marginTop: 2 }}>{m.dropDistanceKm.toFixed(1)} km</span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -147,6 +160,18 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
                   everyone pays only for the stretch of the shared route they're riding, not an
                   equal share of the whole trip.
                 </p>
+                <FareBreakupDetails fare={group?.fare} />
+              </div>
+            )}
+
+            {seatsLeft === 0 && (
+              <div style={{ marginTop: 14, fontSize: 12.5, color: '#0F6B52', fontWeight: 700 }}>
+                Group full ({members.length}/{members.length}) · 0 seats left
+              </div>
+            )}
+            {typeof seatsLeft === 'number' && seatsLeft > 0 && (
+              <div style={{ marginTop: 14, fontSize: 12.5, color: 'rgba(33,28,38,.55)', fontWeight: 600 }}>
+                {seatsLeft} seat{seatsLeft === 1 ? '' : 's'} still open — students heading your way can still join, which lowers everyone's share.
               </div>
             )}
 
@@ -173,13 +198,15 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
         <div className="card">
           <div className="input-label" style={{ marginBottom: 16 }}>Booking summary</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 13, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
-              <span style={{ color: 'rgba(33,28,38,.6)' }}>Vehicle</span>
-              <span style={{ fontWeight: 700 }}>{driver.vehicle}</span>
-            </div>
+            {driver && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
+                <span style={{ color: 'rgba(33,28,38,.6)' }}>Vehicle</span>
+                <span style={{ fontWeight: 700 }}>{driver.vehicle}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
               <span style={{ color: 'rgba(33,28,38,.6)' }}>Riders</span>
-              <span style={{ fontWeight: 700 }}>{members.length} riders</span>
+              <span style={{ fontWeight: 700 }}>{members.length} rider{members.length === 1 ? '' : 's'}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 14px Karla,sans-serif' }}>
               <span style={{ color: 'rgba(33,28,38,.6)' }}>Trip total</span>
@@ -196,7 +223,16 @@ export default function BookingConfirmation({ group, driver, groupId, onContinue
             <span style={{ font: '700 15px Familjen Grotesk,sans-serif' }}>You pay</span>
             <span style={{ font: '700 30px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{formatFare(share)}</span>
           </div>
-          <button className="btn-primary" style={{ marginTop: 22 }} onClick={onContinue}>Continue to payment</button>
+          <button className="btn-primary" style={{ marginTop: 22, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={run(onContinue)}>{continueLabel}</button>
+          {onLeave && (
+            <button
+              onClick={run(onLeave)}
+              disabled={busy}
+              style={{ marginTop: 12, width: '100%', border: 0, background: 'transparent', font: '700 13px Karla,sans-serif', color: '#B3261E', cursor: busy ? 'not-allowed' : 'pointer', textDecoration: 'underline' }}
+            >
+              Can't make it? Leave group
+            </button>
+          )}
           <p style={{ margin: '14px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'rgba(33,28,38,.5)', textAlign: 'center' }}>
             Split by distance. Each rider pays only for the segments they travel.
           </p>

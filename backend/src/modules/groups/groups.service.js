@@ -16,12 +16,48 @@ const env = require('../../config/env');
 const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
 const nodeModel = require('../../models/node.model');
 const ridesService = require('../rides/rides.service');
+const { DEMO_DRIVERS, DRIVER_ETA_MINUTES } = require('../../config/drivers');
+
+// Joins and leaves run one at a time: each reads the group, then writes it after
+// several awaits, so two riders clicking "join" together could otherwise both
+// take the last seat.
+let groupWriteQueue = Promise.resolve();
+function oneAtATime(fn) {
+  return (...args) => {
+    const run = groupWriteQueue.then(() => fn(...args));
+    groupWriteQueue = run.catch(() => {});
+    return run;
+  };
+}
+
+// A rider can be in only one upcoming group at a time. Returns that group
+// (other than `exceptGroupId`), or null. Groups whose pickup has passed don't count.
+async function activeGroupOf(userId, exceptGroupId) {
+  for (const id of new Set(await groupMemberModel.listGroupIdsByUser(userId))) {
+    if (id === exceptGroupId) continue;
+    const g = await groupModel.findById(id);
+    if (g && g.status !== 'cancelled' && pickupTimeOf(g).getTime() >= Date.now() - MATCH_BUFFER_MINUTES * 60000) return g;
+  }
+  return null;
+}
+
+// The one "you're already in a group" message, used by every join path and by
+// the Dashboard list (so a blocked Join shows the same text as a refused join).
+function alreadyInGroupMessage(g) {
+  const time = pickupTimeOf(g).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  return `You're already in a group for ${time}. Leave it (Joined groups page) before joining another.`;
+}
+
+async function assertNoOtherActiveGroup(userId, exceptGroupId) {
+  const other = await activeGroupOf(userId, exceptGroupId);
+  if (other) throw ApiError.conflict(alreadyInGroupMessage(other));
+}
 
 // Joins (or creates) the group made up of exactly `memberRideRequestIds`.
 // The caller must own `rideRequestId`, one of the ids in that set - this is
 // how both the first rider (creating the group) and later riders (joining
 // a group a groupmate already locked in) go through the same endpoint.
-async function join(userId, { rideRequestId, memberRideRequestIds }) {
+const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds }) => {
   if (!memberRideRequestIds.includes(rideRequestId)) {
     throw ApiError.badRequest('rideRequestId must be included in memberRideRequestIds');
   }
@@ -46,7 +82,8 @@ async function join(userId, { rideRequestId, memberRideRequestIds }) {
     if (groupIds.length > 1) throw ApiError.conflict('Selected riders are in different groups');
     if (groupIds.length === 1) {
       const g = await groupModel.findById(groupIds[0]);
-      if (!g || g.status !== 'forming') throw ApiError.conflict('One of the selected riders has already joined a different group');
+      if (g?.status === 'confirmed') throw ApiError.conflict('This group just filled up - refresh the list and pick another, or start a new group');
+      if (!g || g.status !== 'forming') throw ApiError.conflict('This group is no longer open');
       existingGroupId = g.id;
       const extraIds = (await groupMemberModel.listByGroup(g.id))
         .map((m) => m.ride_request_id)
@@ -55,6 +92,18 @@ async function join(userId, { rideRequestId, memberRideRequestIds }) {
     }
   }
   if (requests.length > MAX_GROUP_SIZE) throw ApiError.conflict('This group is full');
+  const starts = requests.map((r) => new Date(r.window_start).getTime());
+  if (Math.max(...starts) - Math.min(...starts) > MATCH_BUFFER_MINUTES * 60000) {
+    throw ApiError.badRequest(`Pickup times in a group must be within ${MATCH_BUFFER_MINUTES} minutes of each other`);
+  }
+  for (const r of requests) {
+    if (r.status === 'matched' && r.group_id === existingGroupId) continue; // already in this group
+    if (r.user_id === userId) {
+      await assertNoOtherActiveGroup(userId, existingGroupId);
+    } else if (await activeGroupOf(r.user_id, existingGroupId)) {
+      throw ApiError.conflict('One of the selected riders is already in another group');
+    }
+  }
 
   const edges = await routeEdgeModel.listAll();
   const { pathTo } = dijkstra(edges, own.pickup_node_id);
@@ -131,41 +180,30 @@ async function join(userId, { rideRequestId, memberRideRequestIds }) {
       isYou: m.user_id === userId,
     })),
   };
-}
+});
 
 // Group departure_time is the latest member's window_start (= pickup - buffer).
 const pickupTimeOf = (g) => new Date(new Date(g.departure_time).getTime() + MATCH_BUFFER_MINUTES * 60000);
 // The auto runs to the farthest member's drop.
 const farthest = (members) => members.reduce((a, b) => (Number(b.estimated_distance_km) > Number(a.estimated_distance_km) ? b : a));
 
-// Forming groups with a free seat and an upcoming pickup that the user isn't already in,
-// plus other students' open requests nobody has grouped yet (joining one starts a group of 2).
+// Forming groups with a free seat and an upcoming pickup that the user isn't already in.
+// Each carries joinBlockedReason when the one-active-group rule stops this user joining.
 async function listAvailable(userId) {
   const out = [];
-  const bufferMs = MATCH_BUFFER_MINUTES * 60000;
-  const nodeName = async (id) => (await nodeModel.findById(id))?.name;
-  for (const r of await rideRequestModel.listOpenUngrouped()) {
-    const pickupTime = new Date(new Date(r.window_start).getTime() + bufferMs);
-    if (r.user_id === userId || pickupTime < new Date()) continue;
-    const u = await userModel.findById(r.user_id);
-    out.push({
-      id: r.id,
-      pickupName: await nodeName(r.pickup_node_id),
-      dropName: await nodeName(r.drop_node_id),
-      pickupTime: pickupTime.toISOString(),
-      seatsLeft: MAX_GROUP_SIZE - 1,
-      members: [{ name: u?.name, initials: u?.initials, dropName: await nodeName(r.drop_node_id) }],
-      fare: await fareBreakup(r.pickup_node_id, [
-        { userId: r.user_id, name: u?.name, dropNodeId: r.drop_node_id, dropName: await nodeName(r.drop_node_id) },
-        { userId, name: 'You', dropNodeId: r.drop_node_id, dropName: await nodeName(r.drop_node_id) },
-      ], userId),
-    });
-  }
+  // A row that can't be priced is logged and skipped, not allowed to 500 the whole list.
+  const tryPush = async (label, build) => {
+    try { out.push(await build()); } catch (e) { console.error(`[groups/available] skipped ${label}:`, e); }
+  };
+  // Only forming groups: joining goes through the Book page's search -> confirm
+  // flow, which joins groups (a lone open request is a search, not a group).
+  const mine = await activeGroupOf(userId);
+  const joinBlockedReason = mine ? alreadyInGroupMessage(mine) : null;
   for (const g of await groupModel.listForming()) {
     const members = await groupMemberModel.listByGroup(g.id);
     if (members.length === 0 || members.length >= MAX_GROUP_SIZE) continue;
     if (members.some((m) => m.user_id === userId) || pickupTimeOf(g) < new Date()) continue;
-    out.push(await describeGroup(g, members, userId, true));
+    await tryPush(`group ${g.id}`, async () => ({ ...await describeGroup(g, members, userId, true), joinBlockedReason }));
   }
   return out.sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
 }
@@ -176,7 +214,11 @@ async function fareBreakup(pickupNodeId, riders, youUserId) {
   const t = env.autoTariff;
   const edges = await routeEdgeModel.listAll();
   const { pathTo } = dijkstra(edges, pickupNodeId);
-  const withKm = riders.map((r) => ({ ...r, km: pathTo(r.dropNodeId)?.distanceKm ?? 0 }));
+  const withKm = riders.map((r) => {
+    const path = pathTo(r.dropNodeId);
+    if (!path) throw ApiError.badRequest(`No route from stop ${pickupNodeId} to stop ${r.dropNodeId} in the stop graph`);
+    return { ...r, km: path.distanceKm };
+  });
   const backbone = pathTo(withKm.reduce((a, b) => (b.km > a.km ? b : a)).dropNodeId);
   const stops = buildCumulativePath(edges, backbone.nodeIds);
   const { totalFare, shares } = splitFareBySegments(stops, withKm.map((r) => ({ userId: r.userId, dropCumulativeKm: r.km })), t);
@@ -238,7 +280,10 @@ async function listMine(userId) {
 // Join a listed group (or a listed open request) directly: creates the user's request
 // on its route and time, then joins through the normal path.
 // ponytail: rider goes to the group's farthest drop; add a drop picker if riders need to get off earlier.
+// Legacy direct join (the Dashboard now sends users through the Book flow);
+// kept for API compatibility, with the same one-active-group rule up front.
 async function joinById(userId, id) {
+  await assertNoOtherActiveGroup(userId);
   const g = await groupModel.findById(id);
   if (!g) {
     const other = await rideRequestModel.findById(id);
@@ -258,6 +303,90 @@ async function joinById(userId, id) {
     pickupTime: pickupTimeOf(g).toISOString(),
   });
   return join(userId, { rideRequestId: req.id, memberRideRequestIds: [req.id, ...members.map((m) => m.ride_request_id)] });
+}
+
+// Full view of a group for one of its members: riders, per-rider fare, price breakup.
+// Same shape as a /rides/matches entry, so the booking screens render either.
+async function getGroup(groupId, userId) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  const members = await groupMemberModel.listByGroup(groupId);
+  const pickup = await nodeModel.findById(g.pickup_node_id);
+  const fare = await fareBreakup(g.pickup_node_id, ridersOf(members), userId);
+  return {
+    id: g.id,
+    groupKey: g.id,
+    status: g.status,
+    departureTime: pickupTimeOf(g).toISOString(),
+    totalFare: fare.totalFare,
+    distanceKm: fare.distanceKm,
+    seatsLeft: MAX_GROUP_SIZE - members.length,
+    pickupNode: pickup ? { id: pickup.id, name: pickup.name, shortName: pickup.shortName } : null,
+    memberRideRequestIds: members.map((m) => m.ride_request_id),
+    fare,
+    members: members.map((m, i) => ({
+      userId: m.user_id,
+      rideRequestId: m.ride_request_id,
+      name: m.name,
+      initials: m.initials,
+      branch: m.branch,
+      isYou: m.user_id === userId,
+      dropNode: { id: m.drop_node_id, name: m.drop_name, shortName: m.drop_short },
+      dropDistanceKm: fare.members[i].distanceKm,
+      fareShare: fare.members[i].fareShare,
+      soloFare: fare.members[i].soloFare,
+    })),
+  };
+}
+
+// "Can't make it": drop the rider (and their request), re-split the fare for
+// whoever is left, and reopen the group if it had been full.
+const leave = oneAtATime(async (groupId, userId) => {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  const mine = (await groupMemberModel.listByGroup(groupId)).find((m) => m.user_id === userId);
+  await groupMemberModel.remove(groupId, userId);
+  await rideRequestModel.cancel(mine.ride_request_id);
+
+  const rest = await groupMemberModel.listByGroup(groupId);
+  if (rest.length === 0) {
+    await groupModel.setStatus(groupId, 'cancelled');
+    return { left: true, groupId };
+  }
+  const fare = await fareBreakup(g.pickup_node_id, ridersOf(rest), null);
+  for (const [i, m] of rest.entries()) {
+    await groupMemberModel.add({ groupId, userId: m.user_id, rideRequestId: m.ride_request_id, dropNodeId: m.drop_node_id, fareShare: fare.members[i].fareShare });
+  }
+  await groupModel.updateTotalFare(groupId, fare.totalFare);
+  if (g.status === 'confirmed') await groupModel.setStatus(groupId, 'forming');
+  return { left: true, groupId };
+});
+
+// The group's driver: picked once (first member to confirm), stored on the group,
+// and returned as-is to every member - so all browsers show the same driver/ETA.
+async function getDriver(groupId, userId) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  let driver = g.driver;
+  if (!driver) {
+    const pick = DEMO_DRIVERS[Math.floor(Math.random() * DEMO_DRIVERS.length)];
+    const { min, max } = DRIVER_ETA_MINUTES;
+    const etaMinutes = min + Math.floor(Math.random() * (max - min + 1));
+    driver = await groupModel.setDriverIfAbsent(groupId, {
+      ...pick,
+      assignedAt: new Date().toISOString(),
+      arrivesAt: new Date(Date.now() + etaMinutes * 60000).toISOString(),
+    });
+  }
+  const msLeft = new Date(driver.arrivesAt).getTime() - Date.now();
+  return {
+    name: driver.name,
+    rating: driver.rating,
+    vehicle: driver.vehicle,
+    plateNumber: driver.plateNumber,
+    arrivesAt: new Date(driver.arrivesAt).toISOString(),
+    etaMinutes: Math.max(0, Math.ceil(msLeft / 60000)),
+  };
 }
 
 async function assertMembership(groupId, userId) {
@@ -294,4 +423,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, listAvailable, listMine, joinById, listChat, postChat };
+module.exports = { join, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };

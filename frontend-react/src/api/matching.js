@@ -3,22 +3,10 @@
  * Book (auto-picks the top-scored one) so the mock/real branching lives in
  * exactly one place instead of being duplicated per page.
  */
-import { requestRide, getMatches, getNodes, USE_MOCK_MATCHING } from './client';
+import { requestRide, getMatches, USE_MOCK_MATCHING } from './client';
 
-const words = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
-
-// ponytail: word-overlap match of free text to a node; swap for a real node picker when one lands.
-function resolveNodeId(nodes, text) {
-  const input = words(text);
-  let best = null, bestScore = 0;
-  for (const n of nodes) {
-    const nodeWords = words(`${n.name} ${n.shortName ?? ''}`);
-    const score = input.filter((w) => nodeWords.includes(w)).length;
-    if (score > bestScore) { best = n; bestScore = score; }
-  }
-  if (!best) throw new Error(`Unknown place "${text}". Try one of: ${nodes.map((n) => n.name).join(', ')}`);
-  return best.id;
-}
+// Free-text pickup/drop is resolved to the nearest named stop by the backend
+// (backend/src/utils/stopMatcher.js), so there's one matcher, not two.
 
 const STAGE_DELAY_MS = 1500;
 
@@ -98,10 +86,9 @@ export async function runMatchingFlow({ pickupText, dropText, pickupTime, onStag
     return { requestId: null, matches: [buildMockMatch(pickupText, dropText)] };
   }
 
-  const nodes = await getNodes();
   const req = await requestRide({
-    pickupNodeId: resolveNodeId(nodes, pickupText),
-    dropNodeId: resolveNodeId(nodes, dropText),
+    pickupText,
+    dropText,
     pickupTime: pickupTime || new Date().toISOString(),
   });
 
@@ -109,5 +96,5 @@ export async function runMatchingFlow({ pickupText, dropText, pickupTime, onStag
   await new Promise((r) => setTimeout(r, STAGE_DELAY_MS));
 
   const matches = await getMatches(req.id);
-  return { requestId: req.id, matches };
+  return { requestId: req.id, request: req, matches };
 }

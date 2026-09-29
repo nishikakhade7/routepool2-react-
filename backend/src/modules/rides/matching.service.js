@@ -2,55 +2,64 @@ const rideRequestModel = require('../../models/rideRequest.model');
 const routeEdgeModel = require('../../models/routeEdge.model');
 const nodeModel = require('../../models/node.model');
 const userModel = require('../../models/user.model');
+const groupModel = require('../../models/group.model');
+const groupMemberModel = require('../../models/groupMember.model');
 const { dijkstra } = require('../../utils/dijkstra');
-const { buildCumulativePath, splitFareBySegments } = require('../../utils/fare');
 const ApiError = require('../../utils/ApiError');
-const env = require('../../config/env');
-const { MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE } = require('../../config/matchingConfig');
-
-// Scoring weights: how much of the match score comes from shared route
-// overlap (graph distance shared with the target's path), pickup-time
-// closeness, and how similarly "far" the two riders are going (compactness
-// avoids pairing a 1km rider with a 10km rider even if the first km overlaps).
-const WEIGHTS = { overlap: 0.5, time: 0.3, compactness: 0.2 };
-const MIN_SCORE = 0.4;
-const PICKUP_PROXIMITY_METERS = 600;
+const {
+  MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE, MIN_ROUTE_OVERLAP, SCORE_WEIGHTS,
+} = require('../../config/matchingConfig');
 
 // Two riders are time-compatible if their requested pickup times are within
-// MATCH_BUFFER_MINUTES of each other. window_start stores the exact pickup
-// time (window_end = window_start + 2*buffer, set by rides.service.js).
-function timesCompatible(a, b) {
-  const tA = new Date(a.window_start).getTime();
-  const tB = new Date(b.window_start).getTime();
-  return Math.abs(tA - tB) <= MATCH_BUFFER_MINUTES * 60000;
+// MATCH_BUFFER_MINUTES of each other. Every request's window_start carries the
+// same offset from its pickup time, so comparing window_starts is exact.
+const minutesApart = (a, b) => Math.abs(new Date(a.window_start) - new Date(b.window_start)) / 60000;
+
+// True if `shorter`'s stops are a leading prefix of `longer`'s - i.e. both ride
+// the same road in the same direction until `shorter` gets off.
+function pathContains(longer, shorter) {
+  if (shorter.nodeIds.length > longer.nodeIds.length) return false;
+  return shorter.nodeIds.every((id, i) => id === longer.nodeIds[i]);
 }
 
-// Score 1.0 when times are identical, 0.0 when exactly MATCH_BUFFER_MINUTES apart.
-function timeScore(a, b) {
-  const tA = new Date(a.window_start).getTime();
-  const tB = new Date(b.window_start).getTime();
-  const diffMinutes = Math.abs(tA - tB) / 60000;
-  return Math.max(0, 1 - diffMinutes / MATCH_BUFFER_MINUTES);
-}
-
-// Both paths start at the same pickup node, so the shared route overlap is
-// just their common leading sequence of nodes.
-function sharedPrefixKm(pathA, pathB) {
+// Km two routes from the same pickup share before they split (common leading stops).
+function sharedKm(a, b, pathTo) {
   let i = 0;
-  while (i < pathA.nodeIds.length && i < pathB.nodeIds.length && pathA.nodeIds[i] === pathB.nodeIds[i]) i++;
-  if (i === 0) return 0;
-  const lastShared = pathA.nodeIds[i - 1];
-  const stop = pathA.stops.find((s) => s.nodeId === lastShared);
-  return stop ? stop.cumulativeKm : 0;
+  while (i < a.nodeIds.length && i < b.nodeIds.length && a.nodeIds[i] === b.nodeIds[i]) i++;
+  return i > 1 ? pathTo(a.nodeIds[i - 1]).distanceKm : 0;
 }
 
-// True if `shorterPath`'s node sequence is a leading prefix of `longerPath`'s
-// - i.e. they run along the exact same road until `shorterPath` ends.
-function pathContains(longerPath, shorterPath) {
-  if (shorterPath.nodeIds.length > longerPath.nodeIds.length) return false;
-  return shorterPath.nodeIds.every((id, i) => id === longerPath.nodeIds[i]);
+// ELIGIBILITY: shared km / the SHORTER route. A trip lying entirely inside the
+// other one is 100% (Andheri -> Marol inside Andheri -> Ghatkopar), whichever of
+// the two riders started the group.
+function routeOverlap(a, b, pathTo) {
+  const shorter = Math.min(a.distanceKm, b.distanceKm);
+  return shorter > 0 ? sharedKm(a, b, pathTo) / shorter : 1;
 }
 
+// RANKING: shared km / the LONGER route. 1 only for identical routes, so among
+// eligible groups the one going exactly where you're going ranks first.
+function routeSimilarity(a, b, pathTo) {
+  const longer = Math.max(a.distanceKm, b.distanceKm);
+  return longer > 0 ? sharedKm(a, b, pathTo) / longer : 1;
+}
+
+/**
+ * Every forming group this ride request could join, best first.
+ *
+ * A group is offered only if:
+ *   - it starts at the same pickup stop and has a free seat (MAX_GROUP_SIZE),
+ *   - every member's pickup time is within MATCH_BUFFER_MINUTES of this one,
+ *   - this rider's route runs the same way as the group's, sharing at least
+ *     MIN_ROUTE_OVERLAP of the shorter of the two routes (a trip fully inside
+ *     the group's route = 100%).
+ * Ranking uses route SIMILARITY (shared / longer route, averaged over the
+ * members) ahead of time closeness (SCORE_WEIGHTS): an Azad Nagar -> Andheri
+ * rider may join an Azad Nagar -> Ghatkopar group, but a group of Andheri-bound
+ * riders is listed first, so same-route riders end up together.
+ *
+ * Each result includes the fare split as it would be with this rider added.
+ */
 async function findMatches(rideRequestId, userId) {
   const target = await rideRequestModel.findById(rideRequestId);
   if (!target || target.user_id !== userId) throw ApiError.notFound('Ride request not found');
@@ -60,128 +69,81 @@ async function findMatches(rideRequestId, userId) {
   const { pathTo } = dijkstra(edges, target.pickup_node_id);
   const targetPath = pathTo(target.drop_node_id);
   if (!targetPath) throw ApiError.badRequest('No known route from pickup to drop');
-  targetPath.stops = buildCumulativePath(edges, targetPath.nodeIds);
 
-  // PostGIS: widen the candidate pool to requests starting near (not just
-  // exactly at) the target's pickup node.
-  const nearbyPickupIds = await nodeModel.findNearbyIds(target.pickup_node_id, PICKUP_PROXIMITY_METERS);
-  const candidates = await rideRequestModel.findOpenCandidates({
-    pickupNodeIds: nearbyPickupIds,
-    excludeUserId: userId,
-    excludeRequestId: target.id,
-  });
+  // Late require: groups.service requires rides.service, which this module sits beside.
+  const { fareBreakup } = require('../groups/groups.service');
 
-  // One seat per person: if a user has several candidate requests, keep their latest.
-  const latestByUser = new Map();
-  for (const c of candidates) {
-    const prev = latestByUser.get(c.user_id);
-    if (!prev || new Date(c.created_at) > new Date(prev.created_at)) latestByUser.set(c.user_id, c);
-  }
+  const results = [];
+  for (const g of await groupModel.listForming()) {
+    if (g.pickup_node_id !== target.pickup_node_id) continue;
+    const members = await groupMemberModel.listByGroup(g.id);
+    if (members.length === 0 || members.length >= MAX_GROUP_SIZE) continue;
+    if (members.some((m) => m.user_id === userId)) continue;
 
-  const scored = [];
-  for (const c of latestByUser.values()) {
-    if (!timesCompatible(target, c)) continue;
+    const requests = await rideRequestModel.findByIds(members.map((m) => m.ride_request_id));
+    const maxGapMinutes = Math.max(...requests.map((r) => minutesApart(r, target)));
+    if (maxGapMinutes > MATCH_BUFFER_MINUTES) continue;
 
-    const cPath = pathTo(c.drop_node_id);
-    if (!cPath) continue;
-    cPath.stops = buildCumulativePath(edges, cPath.nodeIds);
+    const memberPaths = requests.map((r) => pathTo(r.drop_node_id)).filter(Boolean);
+    if (memberPaths.length !== requests.length) continue;
+    const backbone = memberPaths.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
+    // Everyone must be able to ride one auto along a single line.
+    if (!memberPaths.every((p) => pathContains(backbone, p))) continue;
+    const overlap = routeOverlap(targetPath, backbone, pathTo);
+    if (overlap < MIN_ROUTE_OVERLAP) continue;
+    // join() still needs one auto on one line: the rider's trip must sit inside the
+    // group's route or extend it (a route that branches off can't be served).
+    if (!pathContains(backbone, targetPath) && !pathContains(targetPath, backbone)) continue;
 
-    // A single shared auto can only serve one linear route, so a candidate
-    // is only compatible if their route is entirely contained within the
-    // target's route, or the target's route is entirely contained within
-    // theirs - never if the two diverge onto different final branches.
-    const compatible = pathContains(cPath, targetPath) || pathContains(targetPath, cPath);
-    if (!compatible) continue;
+    const similarity = memberPaths.reduce((t, p) => t + routeSimilarity(targetPath, p, pathTo), 0) / memberPaths.length;
+    const timeScore = 1 - maxGapMinutes / MATCH_BUFFER_MINUTES;
+    const score = SCORE_WEIGHTS.similarity * similarity + SCORE_WEIGHTS.time * timeScore;
 
-    const overlapKm = sharedPrefixKm(targetPath, cPath);
-    const longer = Math.max(targetPath.distanceKm, cPath.distanceKm) || 1;
-    const overlapRatio = overlapKm / longer;
+    const me = await userModel.findById(userId);
+    const myDrop = await nodeModel.findById(target.drop_node_id);
+    const riders = [
+      ...members.map((m) => ({ userId: m.user_id, name: m.name, dropNodeId: m.drop_node_id, dropName: m.drop_name })),
+      { userId, name: me?.name, dropNodeId: target.drop_node_id, dropName: myDrop?.name },
+    ];
+    const fare = await fareBreakup(g.pickup_node_id, riders, userId);
+    const pickupNode = await nodeModel.findById(g.pickup_node_id);
+    const latestStart = Math.max(...[...requests, target].map((r) => new Date(r.window_start).getTime()));
 
-    const tScore = timeScore(target, c);
-    const compactness = 1 - Math.abs(targetPath.distanceKm - cPath.distanceKm) / longer;
-    const score = WEIGHTS.overlap * overlapRatio + WEIGHTS.time * tScore + WEIGHTS.compactness * compactness;
-    if (score < MIN_SCORE) continue;
+    const memberRows = [
+      ...members.map((m) => ({ userId: m.user_id, rideRequestId: m.ride_request_id, name: m.name, initials: m.initials, branch: m.branch, dropNodeId: m.drop_node_id, dropName: m.drop_name, dropShort: m.drop_short })),
+      { userId, rideRequestId: target.id, name: me?.name, initials: me?.initials, branch: me?.branch, dropNodeId: target.drop_node_id, dropName: myDrop?.name, dropShort: myDrop?.shortName },
+    ];
 
-    scored.push({ request: c, path: cPath, score });
-  }
-
-  // Candidates riding a *shorter or equal* route than the target are, by the
-  // containment check above, necessarily a prefix of the target's route -
-  // they're compatible with every backbone below. Candidates riding further
-  // than the target ("extensions") may still diverge from *each other* past
-  // the target's drop point, so each maximal (non-dominated) extension gets
-  // its own group, and shorter extensions already covered by a longer one
-  // are folded in as ordinary partners rather than duplicated.
-  const subPrefix = scored.filter((s) => s.path.distanceKm <= targetPath.distanceKm);
-  const extensions = scored.filter((s) => s.path.distanceKm > targetPath.distanceKm);
-  const maximalExtensions = extensions.filter((s) => (
-    !extensions.some((other) => other !== s && other.path.distanceKm > s.path.distanceKm && pathContains(other.path, s.path))
-  ));
-
-  const memberSets = [];
-  if (subPrefix.length > 0) {
-    memberSets.push({ backbonePath: targetPath, partners: subPrefix });
-  }
-  for (const leaf of maximalExtensions) {
-    const dominated = extensions.filter((e) => e !== leaf && pathContains(leaf.path, e.path));
-    memberSets.push({ backbonePath: leaf.path, partners: [...subPrefix, ...dominated, leaf] });
-  }
-
-  const userIds = [...new Set([target.user_id, ...scored.map((s) => s.request.user_id)])];
-  const usersById = new Map((await Promise.all(userIds.map((id) => userModel.findById(id)))).map((u) => [u.id, u]));
-  const nodeCache = new Map();
-  const nodeById = async (id) => {
-    if (!nodeCache.has(id)) nodeCache.set(id, await nodeModel.findById(id));
-    return nodeCache.get(id);
-  };
-
-  const groups = [];
-  for (const { backbonePath, partners: allPartners } of memberSets) {
-    const partners = [...allPartners].sort((a, b) => b.score - a.score).slice(0, MAX_GROUP_SIZE - 1);
-    if (partners.length === 0) continue;
-
-    const allMembers = [{ request: target, path: targetPath, score: 1 }, ...partners];
-
-    const fareMembers = await Promise.all(allMembers.map(async (m) => ({
-      userId: m.request.user_id,
-      rideRequestId: m.request.id,
-      dropCumulativeKm: m.path.distanceKm,
-      dropNode: await nodeById(m.request.drop_node_id),
-      user: usersById.get(m.request.user_id),
-    })));
-
-    const { totalFare, shares } = splitFareBySegments(backbonePath.stops, fareMembers, env.autoTariff);
-    // Departure = the latest requested pickup time among all group members.
-    const departureTime = new Date(Math.max(...allMembers.map((m) => new Date(m.request.window_start).getTime())));
-
-    // All members share the same pickup node (they were matched on pickup proximity).
-    const pickupNode = await nodeById(target.pickup_node_id);
-
-    groups.push({
-      groupKey: allMembers.map((m) => m.request.id).sort().join(':'),
-      score: +(partners.reduce((s, m) => s + m.score, 0) / partners.length).toFixed(3),
-      departureTime: departureTime.toISOString(),
-      totalFare,
-      distanceKm: backbonePath.distanceKm,
+    results.push({
+      id: g.id,
+      groupKey: g.id,
+      score: +score.toFixed(3),
+      routeOverlap: +overlap.toFixed(2),
+      routeSimilarity: +similarity.toFixed(2),
+      departureTime: new Date(latestStart + MATCH_BUFFER_MINUTES * 60000).toISOString(),
+      totalFare: fare.totalFare,
+      distanceKm: fare.distanceKm,
+      seatsLeft: MAX_GROUP_SIZE - memberRows.length,
       pickupNode: pickupNode ? { id: pickupNode.id, name: pickupNode.name, shortName: pickupNode.shortName } : null,
-      memberRideRequestIds: allMembers.map((m) => m.request.id),
-      members: fareMembers.map((m) => ({
+      memberRideRequestIds: memberRows.map((m) => m.rideRequestId),
+      fare,
+      members: memberRows.map((m, i) => ({
         userId: m.userId,
         rideRequestId: m.rideRequestId,
-        name: m.user.name,
-        initials: m.user.initials,
-        branch: m.user.branch,
+        name: m.name,
+        initials: m.initials,
+        branch: m.branch,
         isYou: m.userId === userId,
-        dropNode: { id: m.dropNode.id, name: m.dropNode.name, shortName: m.dropNode.shortName },
-        dropDistanceKm: m.dropCumulativeKm,
-        fareShare: shares.get(m.userId),
-        soloFare: Number(allMembers.find((am) => am.request.user_id === m.userId).request.solo_fare),
+        dropNode: { id: m.dropNodeId, name: m.dropName, shortName: m.dropShort },
+        dropDistanceKm: fare.members[i].distanceKm,
+        fareShare: fare.members[i].fareShare,
+        soloFare: fare.members[i].soloFare,
       })),
     });
   }
 
-  groups.sort((a, b) => b.score - a.score);
-  return groups;
+  results.sort((a, b) => b.score - a.score);
+  return results;
 }
 
-module.exports = { findMatches };
+module.exports = { findMatches, routeOverlap, routeSimilarity, pathContains };

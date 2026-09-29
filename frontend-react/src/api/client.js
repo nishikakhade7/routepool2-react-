@@ -73,8 +73,10 @@ export function getBusyRoutes() {
   return request('GET', '/dashboard/busy-routes').then((res) => res.routes ?? res);
 }
 
+// { history: rows, summary: { totalRides, totalSavings, avgFare } } — summary is
+// computed server-side from exactly these rows.
 export function getHistory() {
-  return request('GET', '/dashboard/history').then((res) => res.history ?? res);
+  return request('GET', '/dashboard/history');
 }
 
 export function getCampusStats() {
@@ -87,15 +89,14 @@ export function getNodes() {
 }
 
 /**
- * @param {object} params
- * @param {string} params.pickupNodeId
- * @param {string} params.dropNodeId
+ * Pass either stop ids (pickupNodeId/dropNodeId) or the text the student typed
+ * (pickupText/dropText) — the backend resolves text to the nearest named stop.
  * @param {string} params.pickupTime  ISO datetime string (exact desired pickup time).
- *   The server applies a ±5-minute buffer (MATCH_BUFFER_MINUTES in matchingConfig.js)
- *   when comparing riders — no need to pass a window or flex value.
+ *   The server's matching window (MATCH_BUFFER_MINUTES in matchingConfig.js)
+ *   decides who can share — no need to pass a window or flex value.
  */
-export function requestRide({ pickupNodeId, dropNodeId, pickupTime }) {
-  return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupTime });
+export function requestRide({ pickupNodeId, dropNodeId, pickupText, dropText, pickupTime }) {
+  return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupText, dropText, pickupTime });
 }
 
 export function getMatches(rideRequestId) {
@@ -123,6 +124,15 @@ export function joinGroupById(groupId) {
   return request('POST', `/groups/${groupId}/join`);
 }
 
+// Members, per-rider fares and price breakup (same shape as a getMatches entry).
+export function getGroup(groupId) {
+  return request('GET', `/groups/${groupId}`);
+}
+
+export function leaveGroup(groupId) {
+  return request('POST', `/groups/${groupId}/leave`);
+}
+
 export function getChat(groupId) {
   return request('GET', `/groups/${groupId}/chat`).then((res) => res.messages ?? res);
 }
@@ -132,12 +142,11 @@ export function postChat(groupId, message) {
 }
 
 // ---- Driver assignment -----------------------------------
-// Expected real response shape:
-// { name: string, rating: number, vehicle: string, plateNumber: string, etaMinutes: number }
+// GET /api/groups/:groupId/driver ->
+// { name, rating, vehicle, plateNumber, etaMinutes, arrivesAt }
 /**
- * Same mock-now/real-later gating as runMatchingFlow's USE_MOCK_MATCHING
- * branch in api/matching.js — flip that one flag once the backend
- * implements GET /api/rides/:groupId/driver, no call sites need to change.
+ * The backend decides a group's driver once and stores it on the group, so
+ * every member (any browser) gets the same driver and the same arrivesAt.
  *
  * The mock branch returns PLACEHOLDER_DRIVER as-is (field-name strings like
  * "Rating"/"ETA", not realistic fake values) — callers that format these for
@@ -151,10 +160,8 @@ export async function getAssignedDriver(groupId) {
   if (USE_MOCK_MATCHING) {
     return PLACEHOLDER_DRIVER;
   }
-  // ponytail: backend has no driver route yet, so a missing driver must not sink the match; drop the catch once it exists.
-  const data = await request('GET', `/rides/${groupId}/driver`).catch(() => null);
-  if (!data) return PLACEHOLDER_DRIVER;
+  const data = await request('GET', `/groups/${groupId}/driver`);
   // Normalize the wire field name (plateNumber) to `plate`, which is what
   // Book.jsx/BookingConfirmation.jsx already read — callers don't change.
-  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes };
+  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes, arrivesAt: data.arrivesAt };
 }

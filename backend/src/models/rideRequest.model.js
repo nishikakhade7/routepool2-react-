@@ -67,7 +67,8 @@ if (mock) {
   }
 
   /**
-   * Returns the busiest pickup→drop corridors among currently open requests.
+   * Returns the busiest pickup→drop corridors among currently active requests
+   * (open, or in a forming/confirmed group, with the pickup not yet passed).
    * Uses $queryRaw for the GROUP BY JOIN that Prisma can't express natively.
    */
   async function busyRoutes(limit = 5) {
@@ -81,7 +82,8 @@ if (mock) {
       JOIN nodes pn ON pn.id = r.pickup_node_id
       JOIN nodes dn ON dn.id = r.drop_node_id
       LEFT JOIN groups g ON g.id = r.group_id
-      WHERE r.status = 'open' OR (r.status = 'matched' AND g.status = 'forming')
+      WHERE r.window_end >= now()
+        AND (r.status = 'open' OR (r.status = 'matched' AND g.status IN ('forming', 'confirmed')))
       GROUP BY pn.name, pn.short_name, dn.name, dn.short_name
       ORDER BY count DESC
       LIMIT ${limit}
@@ -89,5 +91,9 @@ if (mock) {
     return rows;
   }
 
-  module.exports = { create, findById, findByIds, findOpenCandidates, listOpenUngrouped, findActiveByUser, cancelOpenForUser, markMatched, busyRoutes };
+  async function cancel(id) {
+    return prisma.rideRequest.update({ where: { id }, data: { status: 'cancelled', group_id: null } });
+  }
+
+  module.exports = { create, findById, findByIds, findOpenCandidates, listOpenUngrouped, findActiveByUser, cancelOpenForUser, markMatched, cancel, busyRoutes };
 }

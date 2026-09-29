@@ -41,7 +41,11 @@ export default function GroupChat({ groupId, groupName, route, onClose, inline =
     getChat(groupId)
       .then(data => { if (!cancelled) { setMessages(data); setLoading(false); } })
       .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
-    return () => { cancelled = true; };
+    // ponytail: poll instead of websockets - picks up other members' messages within a few seconds.
+    const poll = setInterval(() => {
+      getChat(groupId).then(data => { if (!cancelled) setMessages(prev => (prev.length === data.length ? prev : data)); }).catch(() => {});
+    }, 4000);
+    return () => { cancelled = true; clearInterval(poll); };
   }, [groupId]);
 
   useEffect(() => {

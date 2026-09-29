@@ -169,8 +169,4 @@ INSERT INTO group_members (group_id, user_id, ride_request_id, drop_node_id, far
   ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000103', '00000000-0000-0000-0000-000000000303', '00000000-0000-0000-0000-000000000003', 53.28, 'confirmed')
 ON CONFLICT (group_id, user_id) DO NOTHING;
 
-INSERT INTO chat_messages (group_id, user_id, message, created_at) VALUES
-  ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000101', 'Heyy, matched with you two for tonight''s pool 🎉', now() - interval '20 minutes'),
-  ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000102', 'Perfect, see you at Gate 2!', now() - interval '18 minutes'),
-  ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000103', 'I''ll be 2 min late, hold the auto 🙏', now() - interval '12 minutes')
-ON CONFLICT DO NOTHING;
+-- No seeded chat messages: a group's chat starts empty.

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
 import Spinner from '../components/Spinner';
-import { getDashboardStats, getHistory } from '../api/client';
+import { getHistory } from '../api/client';
 
 function fmt(isoStr) {
   if (!isoStr) return '—';
@@ -20,24 +20,24 @@ const AVATAR_BG = ['#E7E3F7', '#DCEDE6', '#F7E3F0', '#FFF1DB', '#F4EEE3'];
 const AVATAR_FG = ['#3E3470', '#1F5A4A', '#8A4A72', '#A96A0C', '#5C3350'];
 
 export default function History() {
-  const [stats, setStats] = useState(null);
+  // Tiles and table come from one response: the summary is totals of these rows.
+  const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getDashboardStats(), getHistory()])
-      .then(([s, h]) => {
-        if (!cancelled) { setStats(s); setHistory(h); setLoading(false); }
+    getHistory()
+      .then(({ history: rows, summary: totals }) => {
+        if (!cancelled) { setHistory(rows); setSummary(totals); setLoading(false); }
       })
       .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
     return () => { cancelled = true; };
   }, []);
 
-  const avgFare = history.length > 0
-    ? (history.reduce((s, h) => s + (h.fareShare ?? 0), 0) / history.length).toFixed(0)
-    : 0;
+  const stats = summary;
+  const avgFare = (summary?.avgFare ?? 0).toFixed(0);
 
   return (
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
@@ -60,7 +60,7 @@ export default function History() {
           <div className="card" style={{ padding: '24px 28px' }}>
             <div style={{ font: '600 11px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(33,28,38,.45)', marginBottom: 8 }}>Total Saved</div>
             <div style={{ font: '700 32px Familjen Grotesk,sans-serif', color: '#0F8A5F' }}>
-              {loading ? '—' : `₹${(stats?.totalSavings ?? 0).toLocaleString('en-IN')}`}
+              {loading ? '—' : `₹${Math.round(stats?.totalSavings ?? 0).toLocaleString('en-IN')}`}
             </div>
           </div>
           <div className="card" style={{ padding: '24px 28px' }}>

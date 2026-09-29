@@ -3,6 +3,7 @@ const routeEdgeModel = require('../../models/routeEdge.model');
 const rideRequestModel = require('../../models/rideRequest.model');
 const { dijkstra } = require('../../utils/dijkstra');
 const { autoFareForDistance } = require('../../utils/fare');
+const { matchStop } = require('../../utils/stopMatcher');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
 const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
@@ -11,6 +12,15 @@ async function listNodes() {
   return nodeModel.listAll();
 }
 
+// Free text -> nearest stop id (400 listing the known stops if nothing is close).
+async function resolveStopId(text, label) {
+  const nodes = await nodeModel.listAll();
+  const stop = matchStop(nodes, text);
+  if (!stop) throw ApiError.badRequest(`Unknown ${label} "${text}". Try one of: ${nodes.map((n) => n.name).join(', ')}`);
+  return stop.id;
+}
+
+// Shortest road distance between two stops (Dijkstra over the stop graph).
 async function distanceBetween(pickupNodeId, dropNodeId) {
   const edges = await routeEdgeModel.listAll();
   const { pathTo } = dijkstra(edges, pickupNodeId);
@@ -26,8 +36,10 @@ async function distanceBetween(pickupNodeId, dropNodeId) {
  * stores flexMinutes = 0 — matching is now handled entirely by the buffer
  * constant in matchingConfig.js.
  */
-async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
-  if (pickupNodeId === dropNodeId) throw ApiError.badRequest('Pickup and drop node must differ');
+async function createRequest(userId, { pickupNodeId, dropNodeId, pickupText, dropText, pickupTime }) {
+  pickupNodeId = pickupNodeId || await resolveStopId(pickupText, 'pickup');
+  dropNodeId = dropNodeId || await resolveStopId(dropText, 'drop');
+  if (pickupNodeId === dropNodeId) throw ApiError.badRequest('Pickup and drop resolve to the same stop - pick two different places');
 
   const pickupMs = new Date(pickupTime).getTime();
   if (isNaN(pickupMs)) throw ApiError.badRequest('Invalid pickupTime');
@@ -76,5 +88,5 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
   };
 }
 
-module.exports = { listNodes, distanceBetween, createRequest };
+module.exports = { listNodes, resolveStopId, distanceBetween, createRequest };
 

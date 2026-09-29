@@ -10,7 +10,10 @@ router.use(auth);
 router.post('/join', validate(joinGroupSchema), controller.join);
 router.get('/available', controller.listAvailable);
 router.get('/mine', controller.listMine);
+router.get('/:groupId', validate(groupIdParamSchema), controller.getGroup);
 router.post('/:groupId/join', validate(groupIdParamSchema), controller.joinById);
+router.post('/:groupId/leave', validate(groupIdParamSchema), controller.leave);
+router.get('/:groupId/driver', validate(groupIdParamSchema), controller.getDriver);
 router.get('/:groupId/chat', validate(groupIdParamSchema), controller.getChat);
 router.post('/:groupId/chat', validate(postMessageSchema), controller.postChat);
 

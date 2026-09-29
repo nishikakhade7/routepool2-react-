@@ -4,7 +4,7 @@ import NavBar from '../components/NavBar';
 import Spinner from '../components/Spinner';
 import GroupChat from '../components/GroupChat';
 import FareBreakup from '../components/FareBreakup';
-import { getMyGroups } from '../api/client';
+import { getMyGroups, leaveGroup } from '../api/client';
 
 function fmt(isoStr) {
   return new Date(isoStr).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -17,6 +17,16 @@ export default function JoinedGroups() {
   const [groups, setGroups] = useState(null);
   const [error, setError] = useState(null);
   const [chatGroup, setChatGroup] = useState(null);
+
+  // A rider can only be in one upcoming group; leaving frees them to book another.
+  async function handleLeave(g) {
+    try {
+      await leaveGroup(g.id);
+      setGroups(await getMyGroups());
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   useEffect(() => {
     getMyGroups().then(setGroups).catch(e => setError(e.message));
@@ -67,6 +77,9 @@ export default function JoinedGroups() {
                 </div>
                 <button className="btn-primary" style={{ width: 'auto', padding: '10px 18px' }} onClick={() => setChatGroup(g)}>
                   Chat
+                </button>
+                <button className="btn-ghost" style={{ width: 'auto', padding: '10px 18px' }} onClick={() => handleLeave(g)}>
+                  Leave
                 </button>
               </div>
             ))}

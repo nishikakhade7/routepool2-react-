@@ -12,22 +12,8 @@ const { randomUUID: uuidv4 } = require('crypto');
 
 // ── Seed data (mirrors db/init.sql) ──────────────────────────────────────────
 
-const NODES = [
-  { id: '00000000-0000-0000-0000-000000000001', name: 'S.P.I.T Campus (Gate 2)', short_name: 'SPIT',       area: 'campus', lat: 19.1197, lng: 72.8468, shortName: 'SPIT' },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Andheri East',            short_name: 'ANDHERI E',  area: 'city',   lat: 19.1150, lng: 72.8590, shortName: 'ANDHERI E' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Jogeshwari West',         short_name: 'JOG WEST',   area: 'city',   lat: 19.1360, lng: 72.8380, shortName: 'JOG WEST' },
-  { id: '00000000-0000-0000-0000-000000000004', name: 'Jogeshwari East',         short_name: 'JOG EAST',   area: 'city',   lat: 19.1360, lng: 72.8530, shortName: 'JOG EAST' },
-  { id: '00000000-0000-0000-0000-000000000005', name: 'Marol Naka',              short_name: 'MAROL',      area: 'city',   lat: 19.1190, lng: 72.8790, shortName: 'MAROL' },
-  { id: '00000000-0000-0000-0000-000000000006', name: 'Vile Parle',              short_name: 'VILE PARLE', area: 'city',   lat: 19.1000, lng: 72.8420, shortName: 'VILE PARLE' },
-];
-
-const EDGES = [
-  { id: uuidv4(), nodeAId: '00000000-0000-0000-0000-000000000001', nodeBId: '00000000-0000-0000-0000-000000000002', distanceKm: 2.6 },
-  { id: uuidv4(), nodeAId: '00000000-0000-0000-0000-000000000002', nodeBId: '00000000-0000-0000-0000-000000000005', distanceKm: 1.3 },
-  { id: uuidv4(), nodeAId: '00000000-0000-0000-0000-000000000002', nodeBId: '00000000-0000-0000-0000-000000000003', distanceKm: 3.2 },
-  { id: uuidv4(), nodeAId: '00000000-0000-0000-0000-000000000003', nodeBId: '00000000-0000-0000-0000-000000000004', distanceKm: 1.6 },
-  { id: uuidv4(), nodeAId: '00000000-0000-0000-0000-000000000001', nodeBId: '00000000-0000-0000-0000-000000000006', distanceKm: 4.5 },
-];
+// Stops and road edges come from config/stopGraph.js (edit them there).
+const { STOP_NODES, STOP_EDGES } = require('../config/stopGraph');
 
 const USERS = [
   { id: '00000000-0000-0000-0000-000000000101', email: 'nishika.khade@spit.ac.in',    name: 'Nishika Khade',    initials: 'NK', branch: 'TE Computer Engineering', is_verified: true, total_rides: 3, total_savings: 2340.00, created_at: new Date() },
@@ -36,40 +22,20 @@ const USERS = [
   { id: '00000000-0000-0000-0000-000000000104', email: 'ananya.deshpande@spit.ac.in', name: 'Ananya Deshpande', initials: 'AD', branch: 'SE EXTC',                 is_verified: true, total_rides: 1, total_savings: 210.00,  created_at: new Date() },
 ];
 
-const deptureTime = new Date(Date.now() + 2 * 60 * 60 * 1000); // +2h
-const wStart      = new Date(Date.now() + 2 * 60 * 60 * 1000);
-const wEnd        = new Date(Date.now() + 2.5 * 60 * 60 * 1000);
+// No seeded rides: every group/request is created by real students through the app.
+const GROUPS = [];
+const RIDE_REQUESTS = [];
+const GROUP_MEMBERS = [];
 
-const GROUPS = [
-  { id: '00000000-0000-0000-0000-000000000201', pickup_node_id: '00000000-0000-0000-0000-000000000001', departure_time: deptureTime, total_fare: 159.84, status: 'confirmed', created_at: new Date() },
-  { id: '00000000-0000-0000-0000-000000000999', pickup_node_id: '00000000-0000-0000-0000-000000000001', departure_time: new Date(), total_fare: 50, status: 'confirmed', created_at: new Date() },
-];
-
-const RIDE_REQUESTS = [
-  { id: '00000000-0000-0000-0000-000000000301', user_id: '00000000-0000-0000-0000-000000000101', pickup_node_id: '00000000-0000-0000-0000-000000000001', drop_node_id: '00000000-0000-0000-0000-000000000004', window_start: wStart, window_end: wEnd, flex_minutes: 10, status: 'matched', estimated_distance_km: 7.4,  solo_fare: 159.84, group_id: '00000000-0000-0000-0000-000000000201', created_at: new Date() },
-  { id: '00000000-0000-0000-0000-000000000302', user_id: '00000000-0000-0000-0000-000000000102', pickup_node_id: '00000000-0000-0000-0000-000000000001', drop_node_id: '00000000-0000-0000-0000-000000000002', window_start: wStart, window_end: wEnd, flex_minutes: 10, status: 'matched', estimated_distance_km: 2.6,  solo_fare: 56.16,  group_id: '00000000-0000-0000-0000-000000000201', created_at: new Date() },
-  { id: '00000000-0000-0000-0000-000000000303', user_id: '00000000-0000-0000-0000-000000000103', pickup_node_id: '00000000-0000-0000-0000-000000000001', drop_node_id: '00000000-0000-0000-0000-000000000003', window_start: wStart, window_end: wEnd, flex_minutes: 10, status: 'matched', estimated_distance_km: 5.8,  solo_fare: 125.28, group_id: '00000000-0000-0000-0000-000000000201', created_at: new Date() },
-  { id: '00000000-0000-0000-0000-000000000304', user_id: '00000000-0000-0000-0000-000000000104', pickup_node_id: '00000000-0000-0000-0000-000000000001', drop_node_id: '00000000-0000-0000-0000-000000000005', window_start: wStart, window_end: wEnd, flex_minutes: 10, status: 'open',    estimated_distance_km: 3.9,  solo_fare: 84.24,  group_id: null,                                       created_at: new Date() },
-];
-
-const GROUP_MEMBERS = [
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000101', ride_request_id: '00000000-0000-0000-0000-000000000301', drop_node_id: '00000000-0000-0000-0000-000000000004', fare_share: 87.84, status: 'confirmed', joined_at: new Date() },
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000102', ride_request_id: '00000000-0000-0000-0000-000000000302', drop_node_id: '00000000-0000-0000-0000-000000000002', fare_share: 18.72, status: 'confirmed', joined_at: new Date() },
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000103', ride_request_id: '00000000-0000-0000-0000-000000000303', drop_node_id: '00000000-0000-0000-0000-000000000003', fare_share: 53.28, status: 'confirmed', joined_at: new Date() },
-];
-
-const CHAT_MESSAGES = [
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000101', message: "Heyy, matched with you two for tonight's pool 🎉", created_at: new Date(Date.now() - 20 * 60000) },
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000102', message: 'Perfect, see you at Gate 2!',                   created_at: new Date(Date.now() - 18 * 60000) },
-  { id: uuidv4(), group_id: '00000000-0000-0000-0000-000000000201', user_id: '00000000-0000-0000-0000-000000000103', message: "I'll be 2 min late, hold the auto 🙏",            created_at: new Date(Date.now() - 12 * 60000) },
-];
+// No seeded chat messages: a group's chat starts empty and only holds what members send.
+const CHAT_MESSAGES = [];
 
 // Mutable in-memory tables (arrays are mutated in place)
 const db = {
   users: [...USERS],
   otpCodes: [],
-  nodes: [...NODES],
-  edges: [...EDGES],
+  nodes: [],
+  edges: [],
   groups: [...GROUPS],
   rideRequests: [...RIDE_REQUESTS],
   groupMembers: [...GROUP_MEMBERS],
@@ -80,18 +46,44 @@ const db = {
 // users, requests and groups - which also logged everyone out. Delete the file to reseed.
 // ponytail: snapshot every 2s, so the last <2s of writes can be lost on a hard kill.
 const fs = require('fs');
-const DB_FILE = require('path').join(__dirname, '../../.mockdb.json');
+const DB_FILE = process.env.MOCK_DB_FILE || require('path').join(__dirname, '../../.mockdb.json');
 try {
   const isoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
   Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'), (k, v) => (typeof v === 'string' && isoDate.test(v) ? new Date(v) : v)));
 } catch { /* no snapshot yet: start from seed data */ }
+// Stops/edges always come from config, never from an old snapshot.
+db.nodes = STOP_NODES.map((n) => ({ ...n }));
+db.edges = STOP_EDGES.map((e) => ({ ...e }));
+
+// Rows saved before the stop list changed can point at stops that no longer
+// exist; with no route to price them they'd crash every screen that lists them.
+// Retire them once at load (logged, so it's visible), instead of failing later.
+{
+  const known = new Set(db.nodes.map((n) => n.id));
+  const staleGroups = new Set(db.groups.filter((g) => g.status !== 'cancelled' && !known.has(g.pickup_node_id)).map((g) => g.id));
+  const staleReqs = db.rideRequests.filter((r) => r.status !== 'cancelled' && (!known.has(r.pickup_node_id) || !known.has(r.drop_node_id) || staleGroups.has(r.group_id)));
+  for (const r of staleReqs) { if (r.group_id) staleGroups.add(r.group_id); r.status = 'cancelled'; }
+  for (const g of db.groups) if (staleGroups.has(g.id)) g.status = 'cancelled';
+  const before = db.groupMembers.length;
+  db.groupMembers = db.groupMembers.filter((m) => !staleGroups.has(m.group_id));
+  if (staleGroups.size || staleReqs.length) {
+    console.warn(`[mockStore] retired ${staleGroups.size} group(s), ${staleReqs.length} request(s), ${before - db.groupMembers.length} membership(s) that referenced stops no longer in config/stopGraph.js`);
+  }
+}
 setInterval(() => fs.writeFile(DB_FILE, JSON.stringify(db), () => {}), 2000).unref();
+// Immediate save, for changes that must survive an instant restart (dev reset, shutdown).
+const saveNow = () => fs.writeFileSync(DB_FILE, JSON.stringify(db));
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.once(sig, () => { try { saveNow(); } finally { process.exit(0); } });
+}
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function nodeById(id) {
   return db.nodes.find(n => n.id === id) || null;
 }
+
+const publicNode = (n) => ({ id: n.id, name: n.name, shortName: n.short_name, area: n.area, kmFromCampus: n.kmFromCampus, aliases: n.aliases, lat: n.lat, lng: n.lng });
 
 // ── OTP model mock ────────────────────────────────────────────────────────────
 
@@ -141,19 +133,18 @@ const userModel = {
 
 const nodeModel = {
   async listAll() {
-    return db.nodes.map(n => ({ id: n.id, name: n.name, shortName: n.short_name, area: n.area, lat: n.lat, lng: n.lng }));
+    return db.nodes.map(publicNode);
   },
   async findById(id) {
     const n = db.nodes.find(n => n.id === id);
-    if (!n) return null;
-    return { id: n.id, name: n.name, shortName: n.short_name, area: n.area, lat: n.lat, lng: n.lng };
+    return n ? publicNode(n) : null;
   },
   // Simplification: treat all nodes within 600m as nearby; for mock data
   // only the same-node pickup will ever be used, so just return nodes whose
   // real geographic distance from the given node is ≤ radiusMeters.
   async findNearbyIds(nodeId, radiusMeters = 600) {
     const origin = db.nodes.find(n => n.id === nodeId);
-    if (!origin) return [nodeId];
+    if (!origin || origin.lat == null) return [nodeId]; // stop graph has no coordinates yet
     const R = 6371000; // earth radius m
     const nearby = db.nodes
       .filter(n => {
@@ -177,6 +168,16 @@ const routeEdgeModel = {
 };
 
 // ── RideRequest model mock ────────────────────────────────────────────────────
+
+// A request is "active" while it's open or in a forming/confirmed group and its
+// pickup hasn't passed (window_end = pickup + buffer). Same rule as a user's
+// active ride on the Dashboard.
+const isActiveRequest = (r) => {
+  if (new Date(r.window_end) < new Date()) return false;
+  if (r.status === 'open') return true;
+  const g = r.status === 'matched' && db.groups.find(g => g.id === r.group_id);
+  return !!g && (g.status === 'forming' || g.status === 'confirmed');
+};
 
 // Open requests, plus members of groups still forming (not yet full) - i.e. joinable.
 const isJoinable = (r) => r.status === 'open' || (r.status === 'matched' && db.groups.find(g => g.id === r.group_id)?.status === 'forming');
@@ -223,13 +224,18 @@ const rideRequestModel = {
   async cancelOpenForUser(userId, _client) {
     db.rideRequests.filter(r => r.user_id === userId && r.status === 'open').forEach(r => { r.status = 'cancelled'; });
   },
+  async cancel(id) {
+    const rr = db.rideRequests.find(r => r.id === id);
+    if (rr) { rr.status = 'cancelled'; rr.group_id = null; }
+    return rr;
+  },
   async markMatched(id, groupId, _client) {
     const rr = db.rideRequests.find(r => r.id === id);
     if (rr) { rr.status = 'matched'; rr.group_id = groupId; }
     return rr;
   },
   async busyRoutes(limit = 5) {
-    const openReqs = db.rideRequests.filter(isJoinable);
+    const openReqs = db.rideRequests.filter(isActiveRequest);
     const counts = {};
     for (const r of openReqs) {
       const key = `${r.pickup_node_id}|${r.drop_node_id}`;
@@ -265,6 +271,13 @@ const groupModel = {
     const g = db.groups.find(g => g.id === id);
     if (g) g.status = status;
     return g;
+  },
+  // First caller wins: a group's driver is decided once and never replaced.
+  async setDriverIfAbsent(id, driver) {
+    const g = db.groups.find(g => g.id === id);
+    if (!g) return null;
+    if (!g.driver) g.driver = driver;
+    return g.driver;
   },
   async updateTotalFare(id, totalFare, _client) {
     const g = db.groups.find(g => g.id === id);
@@ -325,6 +338,10 @@ const groupMemberModel = {
   async listGroupIdsByUser(userId) {
     return db.groupMembers.filter(m => m.user_id === userId).map(m => m.group_id);
   },
+  async remove(groupId, userId) {
+    const i = db.groupMembers.findIndex(m => m.group_id === groupId && m.user_id === userId);
+    return i >= 0 ? db.groupMembers.splice(i, 1)[0] : null;
+  },
   async isMember(groupId, userId) {
     return db.groupMembers.some(m => m.group_id === groupId && m.user_id === userId);
   },
@@ -352,6 +369,21 @@ const chatMessageModel = {
 
 // ── withTransaction mock (just runs the fn directly) ─────────────────────────
 
+// Dev reset: wipe all ride state (requests, groups + their drivers, members, chat)
+// but keep users and OTPs, so everyone stays logged in. Arrays are emptied in
+// place; the 2s snapshot then persists the empty state.
+function resetRides() {
+  const counts = {
+    rideRequests: db.rideRequests.length,
+    groups: db.groups.length,
+    groupMembers: db.groupMembers.length,
+    chatMessages: db.chatMessages.length,
+  };
+  for (const table of Object.keys(counts)) db[table].length = 0;
+  saveNow(); // on disk right away, so stopping the server straight after can't bring rides back
+  return counts;
+}
+
 async function withTransaction(fn) {
   // Mock client: expose same query API as pool (unused in mock models but keeps signature)
   const mockClient = { query: async () => ({ rows: [] }) };
@@ -370,5 +402,6 @@ module.exports = {
   withTransaction,
   // Expose raw in-memory tables so dashboard service can do JS-level joins
   _db: db,
+  resetRides,
 };
 

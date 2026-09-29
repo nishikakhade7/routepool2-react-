@@ -55,5 +55,13 @@ if (mock) {
     return rows[0]?.group_id || null;
   }
 
-  module.exports = { create, findById, listForming, setStatus, updateTotalFare, findByExactRideRequestSet };
+  // ponytail: no driver column in the Postgres schema yet - kept in process memory
+  // (same "decided once per group" rule as the mock store); add a column to persist it.
+  const drivers = new Map();
+  async function setDriverIfAbsent(id, driver) {
+    if (!drivers.has(id)) drivers.set(id, driver);
+    return drivers.get(id);
+  }
+
+  module.exports = { create, findById, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent };
 }

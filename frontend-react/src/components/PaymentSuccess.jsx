@@ -4,6 +4,11 @@ import VisionBadge from './VisionBadge';
 import GroupChat from './GroupChat';
 import { formatFare } from '../utils/formatFare';
 
+// Seconds from now until `ms` (epoch ms), or null when there's no shared arrival time.
+function secondsUntil(ms) {
+  return ms == null ? null : Math.max(0, Math.round((ms - Date.now()) / 1000));
+}
+
 function formatClock(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
@@ -36,17 +41,21 @@ export default function PaymentSuccess({ driver, amount, tripTotal, paymentMetho
   // value (arguably more so than any static label), so it only ticks once
   // there's a real ETA to count down from; otherwise a static box is shown.
   const hasRealEta = typeof driver?.etaMinutes === 'number';
-  const [totalSeconds] = useState(() => Math.max(1, Math.round((hasRealEta ? driver.etaMinutes : 4) * 60)));
-  const [secondsLeft, setSecondsLeft] = useState(totalSeconds);
+  // Count down to the backend's shared arrivesAt when present, so every
+  // group member's screen shows the same clock.
+  const arrivesAtMs = driver?.arrivesAt ? new Date(driver.arrivesAt).getTime() : null;
+  const [totalSeconds] = useState(() => Math.max(1, secondsUntil(arrivesAtMs) ?? Math.round((hasRealEta ? driver.etaMinutes : 4) * 60)));
+  const [secondsLeft, setSecondsLeft] = useState(() => secondsUntil(arrivesAtMs) ?? totalSeconds);
   const arrived = hasRealEta && secondsLeft <= 0;
 
   useEffect(() => {
     if (!hasRealEta || arrived) return;
     const interval = setInterval(() => {
-      setSecondsLeft((s) => (s <= 1 ? 0 : s - 1));
+      const synced = secondsUntil(arrivesAtMs);
+      setSecondsLeft((s) => (synced ?? (s <= 1 ? 0 : s - 1)));
     }, 1000);
     return () => clearInterval(interval);
-  }, [hasRealEta, arrived]);
+  }, [hasRealEta, arrived, arrivesAtMs]);
 
   const fraction = secondsLeft / totalSeconds;
   const timerColor = fraction <= 1 / 6 ? '#FF9A8B' : fraction <= 0.5 ? '#F7C15B' : '#8FE3C4';

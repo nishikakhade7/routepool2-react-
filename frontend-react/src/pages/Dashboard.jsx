@@ -4,7 +4,7 @@ import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import FareBreakup from '../components/FareBreakup';
-import { getDashboardStats, getBusyRoutes, getAvailableGroups, joinGroupById } from '../api/client';
+import { getDashboardStats, getBusyRoutes, getAvailableGroups } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 function fmt(isoStr) {
@@ -18,36 +18,43 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [busyRoutes, setBusyRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Each card loads independently, so one failing endpoint shows its own error
+  // instead of blanking every card.
+  const [cardErrors, setCardErrors] = useState({});
   const [available, setAvailable] = useState([]);
-  const [joiningId, setJoiningId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getDashboardStats(), getBusyRoutes(), getAvailableGroups()])
+    Promise.allSettled([getDashboardStats(), getBusyRoutes(), getAvailableGroups()])
       .then(([s, b, a]) => {
-        if (!cancelled) { setStats(s); setBusyRoutes(b); setAvailable(a); setLoading(false); }
-      })
-      .catch(e => {
-        if (!cancelled) { setError(e.message); setLoading(false); }
+        if (cancelled) return;
+        if (s.status === 'fulfilled') setStats(s.value);
+        if (b.status === 'fulfilled') setBusyRoutes(b.value);
+        if (a.status === 'fulfilled') setAvailable(a.value);
+        setCardErrors({
+          stats: s.reason?.message,
+          busy: b.reason?.message,
+          available: a.reason?.message,
+        });
+        setLoading(false);
       });
     return () => { cancelled = true; };
   }, []);
 
-  async function handleJoin(g) {
-    setJoiningId(g.id);
-    setError(null);
-    try {
-      const joined = await joinGroupById(g.id);
-      navigate(`/groups?joined=${joined.id}`);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setJoiningId(null);
-    }
+  // Join = the Book page's flow for this group: search its route/time (same
+  // endpoints and rules), then straight to "Confirm your booking".
+  function openInBook(g) {
+    const t = new Date(g.pickupTime);
+    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const q = new URLSearchParams({ group: g.id, pickup: g.pickupName, drop: g.dropName, time: hhmm });
+    navigate(`/book?${q}`);
   }
 
-  const activeGroup = stats?.recentActivity?.find(a => a.status === 'forming' || a.status === 'confirmed');
+  // The one-active-group rule from the backend (same message as a refused join).
+  const joinBlockedReason = available.find((g) => g.joinBlockedReason)?.joinBlockedReason;
+
+  // Same row the History table shows for this ride (backend getHistory).
+  const activeGroup = stats?.activeRide ?? null;
   const firstName = user?.name?.split(' ')[0] ?? 'there';
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
@@ -80,21 +87,30 @@ export default function Dashboard() {
                 <Spinner />
                 Loading your pool...
               </div>
-            ) : error ? (
-              <div className="error-msg-red">{error}</div>
+            ) : cardErrors.stats ? (
+              <div className="error-msg-red">Couldn't load your pool: {cardErrors.stats}</div>
             ) : activeGroup ? (
-              <div className="card-dark" style={{ cursor: 'pointer' }} onClick={() => navigate('/form-group')}>
+              <div className="card-dark" style={{ cursor: 'pointer' }} onClick={() => navigate('/groups')}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, position: 'relative', zIndex: 2 }}>
                   <div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: '#FFF1DB', color: '#A96A0C', padding: '6px 11px', borderRadius: 999, marginBottom: 12 }}>
-                      <span className="spinner-sm" style={{ borderTopColor: '#A96A0C', width: 11, height: 11, borderWidth: 1.5 }}/>
-                      Finding matches
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: activeGroup.status === 'confirmed' ? '#E4F2EC' : '#FFF1DB', color: activeGroup.status === 'confirmed' ? '#0F6B52' : '#A96A0C', padding: '6px 11px', borderRadius: 999, marginBottom: 12 }}>
+                      {activeGroup.status === 'confirmed' ? 'Full · confirmed' : (
+                        <>
+                          <span className="spinner-sm" style={{ borderTopColor: '#A96A0C', width: 11, height: 11, borderWidth: 1.5 }}/>
+                          Forming · open for riders
+                        </>
+                      )}
                     </div>
                     <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', marginBottom: 4 }}>
                       Departs {fmt(activeGroup.departureTime)}
                     </div>
                     <div style={{ fontSize: 13, color: 'rgba(253,250,244,.7)', fontWeight: 600 }}>
                       {activeGroup.pickupName ?? '—'} → {activeGroup.dropName}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'rgba(253,250,244,.6)', fontWeight: 600, marginTop: 6 }}>
+                      {activeGroup.coRiderNames?.length
+                        ? `With ${activeGroup.coRiderNames.join(', ')}`
+                        : 'No co-riders yet'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -137,8 +153,11 @@ export default function Dashboard() {
               Available groups
             </h2>
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              {joinBlockedReason && <div className="error-msg-red" style={{ margin: 16 }}>{joinBlockedReason}</div>}
               {loading ? (
                 <div className="loading-center" style={{ padding: 40 }}><Spinner /></div>
+              ) : cardErrors.available ? (
+                <div className="error-msg-red" style={{ margin: 16 }}>Couldn't load open groups: {cardErrors.available}</div>
               ) : available.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: 'rgba(33,28,38,.4)', font: '600 13px Karla,sans-serif' }}>No open groups right now</div>
               ) : available.map((g, i) => (
@@ -150,8 +169,14 @@ export default function Dashboard() {
                     </div>
                     <FareBreakup fare={g.fare} />
                   </div>
-                  <button className="btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={joiningId === g.id} onClick={() => handleJoin(g)}>
-                    {joiningId === g.id ? 'Joining…' : 'Join'}
+                  <button
+                    className="btn-primary"
+                    style={{ width: 'auto', padding: '10px 18px', opacity: g.joinBlockedReason ? 0.4 : 1, cursor: g.joinBlockedReason ? 'not-allowed' : 'pointer' }}
+                    disabled={!!g.joinBlockedReason}
+                    title={g.joinBlockedReason || 'Review and confirm on the booking screen'}
+                    onClick={() => openInBook(g)}
+                  >
+                    Join
                   </button>
                 </div>
               ))}
@@ -225,6 +250,8 @@ export default function Dashboard() {
             
             {loading ? (
               <div className="loading-center" style={{ padding: 20 }}><Spinner size="sm" /></div>
+            ) : cardErrors.busy ? (
+              <div className="error-msg-red">Couldn't load busy routes: {cardErrors.busy}</div>
             ) : busyRoutes.length === 0 ? (
               <div style={{ fontSize: 13, color: 'rgba(33,28,38,.4)', fontWeight: 600, textAlign: 'center' }}>No active requests</div>
             ) : (

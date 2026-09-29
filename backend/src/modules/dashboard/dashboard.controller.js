@@ -13,7 +13,8 @@ const getBusyRoutes = asyncHandler(async (req, res) => {
 
 const getHistory = asyncHandler(async (req, res) => {
   const history = await dashboardService.getHistory(req.user.id);
-  res.json({ history });
+  // Summary tiles are totals of exactly these rows.
+  res.json({ history, summary: dashboardService.summarize(history) });
 });
 
 const getCampusStats = asyncHandler(async (req, res) => {
