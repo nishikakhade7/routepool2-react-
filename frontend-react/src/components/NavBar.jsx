@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: '/dashboard',       label: 'Dashboard' },
   { to: '/form-group',      label: 'Form a group' },
   { to: '/book',            label: 'Book a ride' },
+  { to: '/groups',          label: 'Joined groups' },
   { to: '/history',         label: 'History' },
   { to: '/campus-insights', label: 'Campus insights' },
 ];

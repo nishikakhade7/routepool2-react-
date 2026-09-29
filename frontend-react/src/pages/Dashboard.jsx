@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
-import { getDashboardStats, getBusyRoutes } from '../api/client';
+import FareBreakup from '../components/FareBreakup';
+import { getDashboardStats, getBusyRoutes, getAvailableGroups, joinGroupById } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 function fmt(isoStr) {
@@ -18,18 +19,33 @@ export default function Dashboard() {
   const [busyRoutes, setBusyRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [available, setAvailable] = useState([]);
+  const [joiningId, setJoiningId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getDashboardStats(), getBusyRoutes()])
-      .then(([s, b]) => {
-        if (!cancelled) { setStats(s); setBusyRoutes(b); setLoading(false); }
+    Promise.all([getDashboardStats(), getBusyRoutes(), getAvailableGroups()])
+      .then(([s, b, a]) => {
+        if (!cancelled) { setStats(s); setBusyRoutes(b); setAvailable(a); setLoading(false); }
       })
       .catch(e => {
         if (!cancelled) { setError(e.message); setLoading(false); }
       });
     return () => { cancelled = true; };
   }, []);
+
+  async function handleJoin(g) {
+    setJoiningId(g.id);
+    setError(null);
+    try {
+      const joined = await joinGroupById(g.id);
+      navigate(`/groups?joined=${joined.id}`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setJoiningId(null);
+    }
+  }
 
   const activeGroup = stats?.recentActivity?.find(a => a.status === 'forming' || a.status === 'confirmed');
   const firstName = user?.name?.split(' ')[0] ?? 'there';
@@ -117,6 +133,32 @@ export default function Dashboard() {
           </section>
 
           <section>
+            <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 16px', color: 'rgba(33,28,38,.55)' }}>
+              Available groups
+            </h2>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              {loading ? (
+                <div className="loading-center" style={{ padding: 40 }}><Spinner /></div>
+              ) : available.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'rgba(33,28,38,.4)', font: '600 13px Karla,sans-serif' }}>No open groups right now</div>
+              ) : available.map((g, i) => (
+                <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px', borderBottom: i < available.length - 1 ? '1px solid rgba(33,28,38,.06)' : 'none' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>{g.pickupName} → {g.dropName}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 600 }}>
+                      {fmt(g.pickupTime)} · {g.members.map(m => m.name).join(', ')} · {g.seatsLeft} seat{g.seatsLeft === 1 ? '' : 's'} left
+                    </div>
+                    <FareBreakup fare={g.fare} />
+                  </div>
+                  <button className="btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={joiningId === g.id} onClick={() => handleJoin(g)}>
+                    {joiningId === g.id ? 'Joining…' : 'Join'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: 0, color: 'rgba(33,28,38,.55)' }}>
                 Recent activity
@@ -190,7 +232,7 @@ export default function Dashboard() {
                 {busyRoutes.map((br, i) => (
                   <div key={i}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>
-                      <span>{br.dropShort}</span>
+                      <span>{br.pickupShort} → {br.dropShort}</span>
                       <span style={{ color: 'rgba(33,28,38,.5)' }}>{br.count} req</span>
                     </div>
                     <div className="progress-track" style={{ height: 5 }}>
@@ -202,15 +244,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div style={{ background: '#FFF1DB', border: '1px solid rgba(169,106,12,.25)', borderRadius: 20, padding: 22, marginTop: 12 }}>
-            <div style={{ font: '700 13px Karla,sans-serif', color: '#A96A0C', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 7 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="#A96A0C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              No driver in Phase 1
-            </div>
-            <div style={{ fontSize: 13, color: 'rgba(169,106,12,.8)', lineHeight: 1.5, fontWeight: 500 }}>
-              Right now, RoutePool only matches you with a group. You still need to hail your own auto at the gate.
-            </div>
-          </div>
 
         </div>
       </main>

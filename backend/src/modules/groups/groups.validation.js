@@ -3,7 +3,7 @@ const { z } = require('zod');
 const joinGroupSchema = z.object({
   body: z.object({
     rideRequestId: z.string().uuid(),
-    memberRideRequestIds: z.array(z.string().uuid()).min(2),
+    memberRideRequestIds: z.array(z.string().uuid()).min(1), // 1 = first rider starting a group
   }),
   query: z.any(),
   params: z.any(),

@@ -2,19 +2,24 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 
-function authMiddleware(req, res, next) {
+const userModel = require('../models/user.model');
+
+async function authMiddleware(req, res, next) {
   const header = req.headers.authorization || '';
   const [scheme, token] = header.split(' ');
   if (scheme !== 'Bearer' || !token) {
     return next(ApiError.unauthorized('Missing bearer token'));
   }
+  let payload;
   try {
-    const payload = jwt.verify(token, env.jwtSecret);
-    req.user = { id: payload.sub, email: payload.email };
-    next();
+    payload = jwt.verify(token, env.jwtSecret);
   } catch (err) {
-    next(ApiError.unauthorized('Invalid or expired token'));
+    return next(ApiError.unauthorized('Invalid or expired token'));
   }
+  // A valid token for a user that no longer exists (e.g. mock DB reset on restart).
+  if (!(await userModel.findById(payload.sub))) return next(ApiError.unauthorized('Session expired, please sign in again'));
+  req.user = { id: payload.sub, email: payload.email };
+  next();
 }
 
-module.exports = authMiddleware;
+module.exports = (req, res, next) => authMiddleware(req, res, next).catch(next);

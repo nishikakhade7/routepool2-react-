@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import VisionBadge from '../components/VisionBadge';
 import RouteVisual from '../components/RouteVisual';
 import BookingConfirmation from '../components/BookingConfirmation';
+import CustomTimePicker from '../components/CustomTimePicker';
 import PaymentMethodSelect from '../components/PaymentMethodSelect';
 import PaymentSuccess from '../components/PaymentSuccess';
-import { DEMO_GROUP_ID, joinGroup, getAssignedDriver } from '../api/client';
+import { DEMO_GROUP_ID, joinGroup } from '../api/client';
+import MatchCard from '../components/MatchCard';
 import { runMatchingFlow } from '../api/matching';
 import { formatRating, formatEta } from '../utils/formatDriver';
 
@@ -17,6 +20,7 @@ const STAGE_WIDTH = {
   where: 1180,
   searching: 760,
   grouping: 760,
+  matched: 820,
   driverAssigned: 820,
   confirm: 1180,
   payment: 820,
@@ -47,15 +51,20 @@ function ScanningVisual({ color }) {
 export default function Book() {
   // Stage: 'where' -> 'searching' -> 'grouping' -> 'driverAssigned' -> 'confirm' -> 'payment' -> 'success'
   const [stage, setStage] = useState('where');
+  const navigate = useNavigate();
 
   // Form data
   const [pickupText, setPickupText] = useState('');
   const [dropText, setDropText] = useState('');
+  const [pickupTime, setPickupTime] = useState(''); // HH:MM today; empty = now
+  // Set when nobody is on this route yet, so the user can start the group.
+  const [firstRequestId, setFirstRequestId] = useState(null);
+  const [groupStarted, setGroupStarted] = useState(false);
 
   // Matching results (real data/shape from runMatchingFlow, same as FormGroup)
   const [myRequestId, setMyRequestId] = useState(null);
   const [group, setGroup] = useState(null);
-  const [driver, setDriver] = useState(null);
+  const [driver] = useState(null); // phase 3
   const [bookError, setBookError] = useState(null);
 
   // Set once handleConfirmBooking's real (non-mock) joinGroup() call succeeds —
@@ -95,24 +104,26 @@ export default function Book() {
 
     (async () => {
       try {
-        const { requestId, matches } = await runMatchingFlow({ pickupText, dropText, onStageChange: setStage });
+        let pickupISO;
+        if (pickupTime) {
+          const [hh, mm] = pickupTime.split(':').map(Number);
+          const d = new Date();
+          d.setHours(hh, mm, 0, 0);
+          pickupISO = d.toISOString();
+        }
+        const { requestId, matches } = await runMatchingFlow({ pickupText, dropText, pickupTime: pickupISO, onStageChange: setStage });
         if (!isMountedRef.current) return;
         const best = [...matches].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null;
         if (!best) {
-          setBookError('No students heading your way right now — try a different time.');
+          setFirstRequestId(requestId);
           setStage('where');
           return;
         }
         setMyRequestId(requestId);
         setGroup(best);
-        // groupKey is the one identifier both mock and real matches already
-        // carry (backend derives it from the sorted member request ids) —
-        // the closest thing to a group id available before the group is
-        // actually created via joinGroup.
-        const assignedDriver = await getAssignedDriver(best.groupKey);
-        if (!isMountedRef.current) return;
-        setDriver(assignedDriver);
-        setStage('driverAssigned');
+        // Phase 1-2 is student matching only: show the group to join.
+        // The driver/payment stages below stay unreachable until phase 3.
+        setStage('matched');
       } catch (e) {
         console.error('[Book] runMatchingFlow failed:', e);
         if (!isMountedRef.current) return;
@@ -120,12 +131,21 @@ export default function Book() {
         setStage('where');
       }
     })();
-  }, [stage, pickupText, dropText]);
+  }, [stage, pickupText, dropText, pickupTime]);
 
   // Locks in the auto-picked match for real (non-mock) groups, the same way
   // MatchCard.handleJoin does — mock groups skip the real API, also matching
   // MatchCard's existing pattern. Captures the real group id so group chat
   // (which requires real membership) becomes reachable afterward.
+  async function handleStartGroup() {
+    try {
+      const started = await joinGroup(firstRequestId, [firstRequestId]);
+      navigate(`/groups?joined=${started.id}`);
+    } catch (e) {
+      setBookError(e.message);
+    }
+  }
+
   async function handleConfirmBooking() {
     if (group?.isMock) {
       setStage('payment');
@@ -204,12 +224,32 @@ export default function Book() {
                   </div>
                 </div>
 
+                <div style={{ marginBottom: 24 }}>
+                  <label className="input-label">Pickup time (leave empty for now)</label>
+                  <div className="input-row">
+                    <CustomTimePicker value={pickupTime} onChange={setPickupTime} />
+                  </div>
+                </div>
+
                 {bookError && <div className="error-msg-red">{bookError}</div>}
+
+                {firstRequestId && (
+                  <div className="card" style={{ marginBottom: 16, padding: 18 }}>
+                    {groupStarted ? (
+                      <div style={{ fontWeight: 600 }}>Group started! Students requesting this route within 5 minutes of your time will join it — check your Dashboard.</div>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 600, marginBottom: 12 }}>No group on this route yet — you're the first. Start one and others heading your way will join.</div>
+                        <button className="btn-accent" onClick={handleStartGroup}>Start a group</button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <button
                   className="btn-primary"
                   disabled={!pickupText || !dropText}
-                  onClick={() => { setBookError(null); setStage('searching'); }}
+                  onClick={() => { setBookError(null); setFirstRequestId(null); setGroupStarted(false); setStage('searching'); }}
                   style={{ opacity: (!pickupText || !dropText) ? 0.5 : 1 }}
                 >
                   Find a ride
@@ -267,6 +307,13 @@ export default function Book() {
               <span className="spinner spinner-sm" />
               Optimizing the shared route
             </div>
+          </div>
+        )}
+
+        {stage === 'matched' && group && (
+          <div className="animate-rise">
+            <MatchCard group={group} index={0} myRideRequestId={myRequestId} />
+            <button className="btn-ghost" style={{ marginTop: 16 }} onClick={() => setStage('where')}>Back</button>
           </div>
         )}
 

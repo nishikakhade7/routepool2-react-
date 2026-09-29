@@ -6,6 +6,18 @@ const join = asyncHandler(async (req, res) => {
   res.status(201).json(group);
 });
 
+const listAvailable = asyncHandler(async (req, res) => {
+  res.json({ groups: await groupsService.listAvailable(req.user.id) });
+});
+
+const listMine = asyncHandler(async (req, res) => {
+  res.json({ groups: await groupsService.listMine(req.user.id) });
+});
+
+const joinById = asyncHandler(async (req, res) => {
+  res.status(201).json(await groupsService.joinById(req.user.id, req.params.groupId));
+});
+
 const getChat = asyncHandler(async (req, res) => {
   const messages = await groupsService.listChat(req.params.groupId, req.user.id);
   res.json({ messages });
@@ -16,4 +28,4 @@ const postChat = asyncHandler(async (req, res) => {
   res.status(201).json(message);
 });
 
-module.exports = { join, getChat, postChat };
+module.exports = { join, listAvailable, listMine, joinById, getChat, postChat };

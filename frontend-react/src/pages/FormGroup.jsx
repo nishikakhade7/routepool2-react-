@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import MatchCard from '../components/MatchCard';
 import CustomTimePicker from '../components/CustomTimePicker';
-import { getNodes } from '../api/client';
+import { getNodes, joinGroup } from '../api/client';
 import { runMatchingFlow } from '../api/matching';
 
 export default function FormGroup() {
   // 'form' | 'searching' | 'results'
   const [stage, setStage] = useState('form');
+  const navigate = useNavigate();
   
   // Form data
   const [nodes, setNodes] = useState([]);
@@ -22,6 +24,17 @@ export default function FormGroup() {
   // Results
   const [myRequestId, setMyRequestId] = useState(null);
   const [matches, setMatches] = useState([]);
+  const [groupStarted, setGroupStarted] = useState(false);
+  const [startError, setStartError] = useState(null);
+
+  async function handleStartGroup() {
+    try {
+      const started = await joinGroup(myRequestId, [myRequestId]);
+      navigate(`/groups?joined=${started.id}`);
+    } catch (e) {
+      setStartError(e.message);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +73,8 @@ export default function FormGroup() {
       });
       setMyRequestId(requestId);
       setMatches(matches);
+      setGroupStarted(false);
+      setStartError(null);
       setStage('results');
     } catch (e) {
       setFormError(e.message);
@@ -192,8 +207,12 @@ export default function FormGroup() {
 
           {matches.length === 0 ? (
             <div className="card loading-center" style={{ padding: 80 }}>
-              <div style={{ font: '700 18px Familjen Grotesk,sans-serif', marginBottom: 8, color: '#211C26' }}>No exact matches right now</div>
-              <div>Try a different pickup time.</div>
+              <div style={{ font: '700 18px Familjen Grotesk,sans-serif', marginBottom: 8, color: '#211C26' }}>
+                {groupStarted ? 'Group started!' : "No group on this route yet — you're the first"}
+              </div>
+              <div>{groupStarted ? 'Students requesting this route within 5 minutes of your time will join it.' : 'Start a group and others heading your way will join.'}</div>
+              {!groupStarted && myRequestId && <button className="btn-accent" style={{ marginTop: 24 }} onClick={handleStartGroup}>Start a group</button>}
+              {startError && <div className="error-msg-red" style={{ marginTop: 12 }}>{startError}</div>}
               <button className="btn-ghost" style={{ marginTop: 24 }} onClick={() => setStage('form')}>Back to form</button>
             </div>
           ) : (

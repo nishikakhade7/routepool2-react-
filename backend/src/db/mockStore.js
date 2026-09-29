@@ -76,6 +76,17 @@ const db = {
   chatMessages: [...CHAT_MESSAGES],
 };
 
+// Persist to disk so a backend restart (nodemon on every file save) doesn't wipe
+// users, requests and groups - which also logged everyone out. Delete the file to reseed.
+// ponytail: snapshot every 2s, so the last <2s of writes can be lost on a hard kill.
+const fs = require('fs');
+const DB_FILE = require('path').join(__dirname, '../../.mockdb.json');
+try {
+  const isoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+  Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'), (k, v) => (typeof v === 'string' && isoDate.test(v) ? new Date(v) : v)));
+} catch { /* no snapshot yet: start from seed data */ }
+setInterval(() => fs.writeFile(DB_FILE, JSON.stringify(db), () => {}), 2000).unref();
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function nodeById(id) {
@@ -167,6 +178,9 @@ const routeEdgeModel = {
 
 // ── RideRequest model mock ────────────────────────────────────────────────────
 
+// Open requests, plus members of groups still forming (not yet full) - i.e. joinable.
+const isJoinable = (r) => r.status === 'open' || (r.status === 'matched' && db.groups.find(g => g.id === r.group_id)?.status === 'forming');
+
 const rideRequestModel = {
   async create({ userId, pickupNodeId, dropNodeId, windowStart, windowEnd, flexMinutes, estimatedDistanceKm, soloFare }) {
     const rr = {
@@ -195,10 +209,19 @@ const rideRequestModel = {
   async findOpenCandidates({ pickupNodeIds, excludeUserId, excludeRequestId }) {
     return db.rideRequests.filter(r =>
       pickupNodeIds.includes(r.pickup_node_id) &&
-      r.status === 'open' &&
+      isJoinable(r) &&
       r.user_id !== excludeUserId &&
       r.id !== excludeRequestId
     );
+  },
+  async listOpenUngrouped() {
+    return db.rideRequests.filter(r => r.status === 'open' && !r.group_id);
+  },
+  async findActiveByUser(userId) {
+    return db.rideRequests.filter(r => r.user_id === userId && (r.status === 'open' || r.status === 'matched'));
+  },
+  async cancelOpenForUser(userId, _client) {
+    db.rideRequests.filter(r => r.user_id === userId && r.status === 'open').forEach(r => { r.status = 'cancelled'; });
   },
   async markMatched(id, groupId, _client) {
     const rr = db.rideRequests.find(r => r.id === id);
@@ -206,7 +229,7 @@ const rideRequestModel = {
     return rr;
   },
   async busyRoutes(limit = 5) {
-    const openReqs = db.rideRequests.filter(r => r.status === 'open');
+    const openReqs = db.rideRequests.filter(isJoinable);
     const counts = {};
     for (const r of openReqs) {
       const key = `${r.pickup_node_id}|${r.drop_node_id}`;
@@ -219,7 +242,7 @@ const rideRequestModel = {
         const [pickupId, dropId] = key.split('|');
         const pn = nodeById(pickupId);
         const dn = nodeById(dropId);
-        return { pickupName: pn?.name || '', dropName: dn?.name || '', dropShort: dn?.short_name || '', count };
+        return { pickupName: pn?.name || '', pickupShort: pn?.short_name || '', dropName: dn?.name || '', dropShort: dn?.short_name || '', count };
       });
   },
 };
@@ -234,6 +257,14 @@ const groupModel = {
   },
   async findById(id) {
     return db.groups.find(g => g.id === id) || null;
+  },
+  async listForming() {
+    return db.groups.filter(g => g.status === 'forming');
+  },
+  async setStatus(id, status, _client) {
+    const g = db.groups.find(g => g.id === id);
+    if (g) g.status = status;
+    return g;
   },
   async updateTotalFare(id, totalFare, _client) {
     const g = db.groups.find(g => g.id === id);
@@ -290,6 +321,9 @@ const groupMemberModel = {
           estimated_distance_km: rr.estimated_distance_km,
         };
       });
+  },
+  async listGroupIdsByUser(userId) {
+    return db.groupMembers.filter(m => m.user_id === userId).map(m => m.group_id);
   },
   async isMember(groupId, userId) {
     return db.groupMembers.some(m => m.group_id === groupId && m.user_id === userId);

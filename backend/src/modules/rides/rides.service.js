@@ -31,8 +31,18 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
 
   const pickupMs = new Date(pickupTime).getTime();
   if (isNaN(pickupMs)) throw ApiError.badRequest('Invalid pickupTime');
+  // 1 min grace so "now" from the client isn't rejected by clock skew.
+  if (pickupMs < Date.now() - 60000) throw ApiError.badRequest('Pickup time must be in the future');
 
   const bufferMs = MATCH_BUFFER_MINUTES * 60000;
+
+  // Same pickup + drop within the matching buffer is the same ride, not a new request.
+  // window_start = pickupTime - buffer, so compare on that.
+  const duplicate = (await rideRequestModel.findActiveByUser(userId)).find((r) =>
+    r.pickup_node_id === pickupNodeId && r.drop_node_id === dropNodeId &&
+    Math.abs(new Date(r.window_start).getTime() + bufferMs - pickupMs) <= bufferMs);
+  if (duplicate?.status === 'matched') throw ApiError.conflict('You already have a ride booked for this route and time');
+
   const windowStart = new Date(pickupMs - bufferMs).toISOString();
   const windowEnd   = new Date(pickupMs + bufferMs).toISOString();
   const flexMinutes = 0;
@@ -43,7 +53,7 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
   const { distanceKm } = await distanceBetween(pickupNodeId, dropNodeId);
   const soloFare = +autoFareForDistance(distanceKm, env.autoTariff).toFixed(2);
 
-  const request = await rideRequestModel.create({
+  const request = duplicate || await rideRequestModel.create({
     userId, pickupNodeId, dropNodeId, windowStart, windowEnd, flexMinutes,
     estimatedDistanceKm: distanceKm, soloFare,
   });
@@ -52,7 +62,7 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, pickupTime }) {
     id: request.id,
     pickup,
     drop,
-    pickupTime: new Date(pickupMs).toISOString(),
+    pickupTime: new Date(new Date(request.window_start).getTime() + bufferMs).toISOString(),
     windowStart: request.window_start,
     windowEnd: request.window_end,
     status: request.status,

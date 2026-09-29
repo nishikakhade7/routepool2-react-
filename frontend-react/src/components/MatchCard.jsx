@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Spinner from './Spinner';
 import GroupChat from './GroupChat';
 import { joinGroup, DEMO_GROUP_ID } from '../api/client';
@@ -27,6 +28,7 @@ function fmt(isoStr) {
 const LINE_COLORS = ['#F2A230', '#8A2B6B', '#157F63', '#5B57E0'];
 
 export default function MatchCard({ group, index, myRideRequestId }) {
+  const navigate = useNavigate();
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState(null);
   const [joinedGroup, setJoinedGroup] = useState(null); // backend group after join
@@ -52,7 +54,7 @@ export default function MatchCard({ group, index, myRideRequestId }) {
 
     try {
       const result = await joinGroup(myRideRequestId, group.memberRideRequestIds);
-      setJoinedGroup(result);
+      navigate(`/groups?joined=${result.id}`);
     } catch (e) {
       setJoinError(e.message);
     } finally {

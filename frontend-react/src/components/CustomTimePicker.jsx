@@ -15,18 +15,26 @@ export default function CustomTimePicker({ value, onChange }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
-  const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+  // Only times later today are offered (the backend rejects past pickup times too).
+  const now = new Date();
+  const isPast = (hh, mm) => hh < now.getHours() || (hh === now.getHours() && mm <= now.getMinutes());
+  const pad = (n) => String(n).padStart(2, '0');
 
   // parse HH:MM
   const [h, m] = (value || '').split(':');
-  
+
+  const hours = Array.from({ length: 24 }, (_, i) => i).filter(hh => !isPast(hh, 59)).map(pad);
+  const minuteHour = Number(h || hours[0]);
+  const minutes = Array.from({ length: 60 }, (_, i) => i).filter(mm => !isPast(minuteHour, mm)).map(pad);
+
   function handleHourSelect(hourStr) {
-    onChange(`${hourStr}:${m || '00'}`);
+    // Keep the chosen minute unless it's now in the past, then take the first valid one.
+    const min = m && !isPast(Number(hourStr), Number(m)) ? m : pad(Array.from({ length: 60 }, (_, i) => i).find(mm => !isPast(Number(hourStr), mm)));
+    onChange(`${hourStr}:${min}`);
   }
 
   function handleMinuteSelect(minStr) {
-    onChange(`${h || '10'}:${minStr}`);
+    onChange(`${h || hours[0]}:${minStr}`);
   }
 
   return (

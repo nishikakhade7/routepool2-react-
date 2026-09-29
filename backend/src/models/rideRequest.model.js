@@ -32,11 +32,25 @@ if (mock) {
     return prisma.rideRequest.findMany({
       where: {
         pickup_node_id: { in: pickupNodeIds },
-        status:         'open',
+        // open requests, plus members of groups still forming (not yet full)
+        OR:             [{ status: 'open' }, { status: 'matched', group: { status: 'forming' } }],
         user_id:        { not: excludeUserId },
         id:             { not: excludeRequestId },
       },
     });
+  }
+
+  async function listOpenUngrouped() {
+    return prisma.rideRequest.findMany({ where: { status: 'open', group_id: null } });
+  }
+
+  async function findActiveByUser(userId) {
+    return prisma.rideRequest.findMany({ where: { user_id: userId, status: { in: ['open', 'matched'] } } });
+  }
+
+  async function cancelOpenForUser(userId, tx) {
+    const client = tx || prisma;
+    return client.rideRequest.updateMany({ where: { user_id: userId, status: 'open' }, data: { status: 'cancelled' } });
   }
 
   /**
@@ -59,19 +73,21 @@ if (mock) {
   async function busyRoutes(limit = 5) {
     const rows = await prisma.$queryRaw`
       SELECT pn.name        AS "pickupName",
+             pn.short_name  AS "pickupShort",
              dn.name        AS "dropName",
              dn.short_name  AS "dropShort",
              COUNT(*)::int  AS count
       FROM ride_requests r
       JOIN nodes pn ON pn.id = r.pickup_node_id
       JOIN nodes dn ON dn.id = r.drop_node_id
-      WHERE r.status = 'open'
-      GROUP BY pn.name, dn.name, dn.short_name
+      LEFT JOIN groups g ON g.id = r.group_id
+      WHERE r.status = 'open' OR (r.status = 'matched' AND g.status = 'forming')
+      GROUP BY pn.name, pn.short_name, dn.name, dn.short_name
       ORDER BY count DESC
       LIMIT ${limit}
     `;
     return rows;
   }
 
-  module.exports = { create, findById, findByIds, findOpenCandidates, markMatched, busyRoutes };
+  module.exports = { create, findById, findByIds, findOpenCandidates, listOpenUngrouped, findActiveByUser, cancelOpenForUser, markMatched, busyRoutes };
 }

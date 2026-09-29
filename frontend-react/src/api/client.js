@@ -40,6 +40,13 @@ async function request(method, path, body) {
     data = null;
   }
 
+  // Session no longer valid -> clear it and go sign in again.
+  if (res.status === 401 && token) {
+    localStorage.removeItem('rp_token');
+    localStorage.removeItem('rp_user');
+    window.location.assign('/login');
+  }
+
   if (!res.ok) {
     const msg = data?.error?.message || data?.message || `Request failed (${res.status})`;
     throw new Error(msg);
@@ -104,6 +111,18 @@ export function joinGroup(rideRequestId, memberRideRequestIds) {
   return request('POST', '/groups/join', { rideRequestId, memberRideRequestIds });
 }
 
+export function getAvailableGroups() {
+  return request('GET', '/groups/available').then((res) => res.groups ?? res);
+}
+
+export function getMyGroups() {
+  return request('GET', '/groups/mine').then((res) => res.groups ?? res);
+}
+
+export function joinGroupById(groupId) {
+  return request('POST', `/groups/${groupId}/join`);
+}
+
 export function getChat(groupId) {
   return request('GET', `/groups/${groupId}/chat`).then((res) => res.messages ?? res);
 }
@@ -132,7 +151,9 @@ export async function getAssignedDriver(groupId) {
   if (USE_MOCK_MATCHING) {
     return PLACEHOLDER_DRIVER;
   }
-  const data = await request('GET', `/rides/${groupId}/driver`);
+  // ponytail: backend has no driver route yet, so a missing driver must not sink the match; drop the catch once it exists.
+  const data = await request('GET', `/rides/${groupId}/driver`).catch(() => null);
+  if (!data) return PLACEHOLDER_DRIVER;
   // Normalize the wire field name (plateNumber) to `plate`, which is what
   // Book.jsx/BookingConfirmation.jsx already read — callers don't change.
   return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes };

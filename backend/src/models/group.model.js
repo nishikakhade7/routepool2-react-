@@ -20,6 +20,15 @@ if (mock) {
     return prisma.group.findUnique({ where: { id } });
   }
 
+  async function listForming() {
+    return prisma.group.findMany({ where: { status: 'forming' } });
+  }
+
+  async function setStatus(id, status, tx) {
+    const client = tx || prisma;
+    return client.group.update({ where: { id }, data: { status } });
+  }
+
   async function updateTotalFare(id, totalFare, tx) {
     const client = tx || prisma;
     return client.group.update({
@@ -46,5 +55,5 @@ if (mock) {
     return rows[0]?.group_id || null;
   }
 
-  module.exports = { create, findById, updateTotalFare, findByExactRideRequestSet };
+  module.exports = { create, findById, listForming, setStatus, updateTotalFare, findByExactRideRequestSet };
 }

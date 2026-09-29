@@ -81,6 +81,7 @@ async function getBusyRoutes() {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return rows.map((r) => ({
     name:      `${r.pickupName} → ${r.dropName}`,
+    pickupShort: r.pickupShort,
     dropShort:  r.dropShort,
     count:      r.count,
     widthPct:   Math.round((r.count / max) * 100),

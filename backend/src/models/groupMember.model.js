@@ -53,6 +53,10 @@ if (mock) {
     }));
   }
 
+  async function listGroupIdsByUser(userId) {
+    return (await prisma.groupMember.findMany({ where: { user_id: userId }, select: { group_id: true } })).map((m) => m.group_id);
+  }
+
   async function isMember(groupId, userId) {
     const m = await prisma.groupMember.findUnique({
       where: { group_id_user_id: { group_id: groupId, user_id: userId } },
@@ -60,5 +64,5 @@ if (mock) {
     return m !== null;
   }
 
-  module.exports = { add, listByGroup, isMember };
+  module.exports = { add, listByGroup, listGroupIdsByUser, isMember };
 }

@@ -13,4 +13,7 @@
  */
 const MATCH_BUFFER_MINUTES = 5;
 
-module.exports = { MATCH_BUFFER_MINUTES };
+// One auto seats this many riders; a group stays 'forming' (joinable) until full.
+const MAX_GROUP_SIZE = 4;
+
+module.exports = { MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE };

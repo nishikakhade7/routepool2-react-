@@ -6,7 +6,7 @@ const { dijkstra } = require('../../utils/dijkstra');
 const { buildCumulativePath, splitFareBySegments } = require('../../utils/fare');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
-const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
+const { MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE } = require('../../config/matchingConfig');
 
 // Scoring weights: how much of the match score comes from shared route
 // overlap (graph distance shared with the target's path), pickup-time
@@ -14,7 +14,6 @@ const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
 // avoids pairing a 1km rider with a 10km rider even if the first km overlaps).
 const WEIGHTS = { overlap: 0.5, time: 0.3, compactness: 0.2 };
 const MIN_SCORE = 0.4;
-const MAX_GROUP_SIZE = 4;
 const PICKUP_PROXIMITY_METERS = 600;
 
 // Two riders are time-compatible if their requested pickup times are within
@@ -72,8 +71,15 @@ async function findMatches(rideRequestId, userId) {
     excludeRequestId: target.id,
   });
 
-  const scored = [];
+  // One seat per person: if a user has several candidate requests, keep their latest.
+  const latestByUser = new Map();
   for (const c of candidates) {
+    const prev = latestByUser.get(c.user_id);
+    if (!prev || new Date(c.created_at) > new Date(prev.created_at)) latestByUser.set(c.user_id, c);
+  }
+
+  const scored = [];
+  for (const c of latestByUser.values()) {
     if (!timesCompatible(target, c)) continue;
 
     const cPath = pathTo(c.drop_node_id);
