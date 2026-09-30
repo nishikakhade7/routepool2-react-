@@ -80,6 +80,10 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGUSR2']) {
 }
 process.on('exit', () => { try { saveNow(); } catch { /* best effort */ } });
 
+// Each rider keeps one permanent code, shown only to them and handed to the
+// driver at pickup. Not an OTP that rotates - it identifies the rider for life.
+const newRiderCode = () => String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function nodeById(id) {
@@ -121,9 +125,15 @@ const userModel = {
     return db.users.find(u => u.id === id) || null;
   },
   async createVerified({ email, name, initials, branch }) {
-    const user = { id: uuidv4(), email, name, initials, branch, is_verified: true, total_rides: 0, total_savings: 0, created_at: new Date() };
+    const user = { id: uuidv4(), email, name, initials, branch, is_verified: true, total_rides: 0, total_savings: 0, rider_code: newRiderCode(), created_at: new Date() };
     db.users.push(user);
     return user;
+  },
+  // Older rows (and the seed) predate rider_code: fill it in once, then keep it forever.
+  async ensureRiderCode(id) {
+    const user = db.users.find(u => u.id === id);
+    if (user && !user.rider_code) user.rider_code = newRiderCode();
+    return user?.rider_code || null;
   },
   async markVerified(id) {
     const user = db.users.find(u => u.id === id);
@@ -259,13 +269,18 @@ const rideRequestModel = {
 // ── Group model mock ──────────────────────────────────────────────────────────
 
 const groupModel = {
-  async create({ pickupNodeId, departureTime, totalFare }, _client) {
-    const g = { id: uuidv4(), pickup_node_id: pickupNodeId, departure_time: new Date(departureTime), total_fare: totalFare, status: 'forming', created_at: new Date() };
+  async create({ pickupNodeId, departureTime, totalFare, kind = 'auto' }, _client) {
+    const g = { id: uuidv4(), pickup_node_id: pickupNodeId, departure_time: new Date(departureTime), total_fare: totalFare, status: 'forming', created_at: new Date() , kind, meeting_point: null, transit_mode: null };
     db.groups.push(g);
     return g;
   },
   async findById(id) {
     return db.groups.find(g => g.id === id) || null;
+  },
+  async setMeeting(id, { meetingPoint, transitMode }) {
+    const g = db.groups.find(g => g.id === id);
+    if (g) { g.meeting_point = meetingPoint; g.transit_mode = transitMode; }
+    return g;
   },
   async listForming() {
     return db.groups.filter(g => g.status === 'forming');
@@ -306,6 +321,14 @@ const groupModel = {
 // ── GroupMember model mock ────────────────────────────────────────────────────
 
 const groupMemberModel = {
+  async markBoarded(groupId, userId) {
+    const m = db.groupMembers.find(m => m.group_id === groupId && m.user_id === userId);
+    if (m) m.boarded_at = new Date();
+    return m;
+  },
+  async boardedMembershipOf(userId) {
+    return db.groupMembers.find(m => m.user_id === userId && m.boarded_at) || null;
+  },
   async add({ groupId, userId, rideRequestId, dropNodeId, fareShare }, _client) {
     // upsert on (group_id, user_id)
     let m = db.groupMembers.find(m => m.group_id === groupId && m.user_id === userId);

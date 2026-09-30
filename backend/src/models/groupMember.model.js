@@ -57,6 +57,17 @@ if (mock) {
     return (await prisma.groupMember.findMany({ where: { user_id: userId }, select: { group_id: true } })).map((m) => m.group_id);
   }
 
+  async function markBoarded(groupId, userId) {
+    return prisma.groupMember.update({
+      where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+      data: { boarded_at: new Date() },
+    });
+  }
+
+  async function boardedMembershipOf(userId) {
+    return prisma.groupMember.findFirst({ where: { user_id: userId, boarded_at: { not: null } } });
+  }
+
   async function isMember(groupId, userId) {
     const m = await prisma.groupMember.findUnique({
       where: { group_id_user_id: { group_id: groupId, user_id: userId } },
@@ -68,5 +79,5 @@ if (mock) {
     return prisma.groupMember.delete({ where: { group_id_user_id: { group_id: groupId, user_id: userId } } });
   }
 
-  module.exports = { add, listByGroup, listGroupIdsByUser, isMember, remove };
+  module.exports = { add, markBoarded, boardedMembershipOf, listByGroup, listGroupIdsByUser, isMember, remove };
 }

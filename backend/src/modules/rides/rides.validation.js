@@ -20,7 +20,7 @@ const requestRideSchema = z.object({
 
 const matchesQuerySchema = z.object({
   body: z.any(),
-  query: z.object({ rideRequestId: z.string().uuid() }),
+  query: z.object({ rideRequestId: z.string().uuid(), kind: z.enum(['auto', 'transit']).optional() }),
   params: z.any(),
 });
 

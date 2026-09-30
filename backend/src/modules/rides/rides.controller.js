@@ -13,7 +13,7 @@ const createRequest = asyncHandler(async (req, res) => {
 });
 
 const getMatches = asyncHandler(async (req, res) => {
-  const groups = await matchingService.findMatches(req.query.rideRequestId, req.user.id);
+  const groups = await matchingService.findMatches(req.query.rideRequestId, req.user.id, req.query.kind || 'auto');
   res.json({ groups });
 });
 

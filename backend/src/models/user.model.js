@@ -18,6 +18,14 @@ if (mock) {
     });
   }
 
+  async function ensureRiderCode(id) {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (user?.rider_code) return user.rider_code;
+    const rider_code = String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+    await prisma.user.update({ where: { id }, data: { rider_code } });
+    return rider_code;
+  }
+
   async function markVerified(id) {
     return prisma.user.update({
       where: { id },
@@ -25,5 +33,5 @@ if (mock) {
     });
   }
 
-  module.exports = { findByEmail, findById, createVerified, markVerified };
+  module.exports = { findByEmail, findById, createVerified, ensureRiderCode, markVerified };
 }

@@ -29,7 +29,7 @@ export default function FormGroup() {
 
   async function handleStartGroup() {
     try {
-      const started = await joinGroup(myRequestId, [myRequestId]);
+      const started = await joinGroup(myRequestId, [myRequestId], 'transit');
       navigate(`/groups?joined=${started.id}`);
     } catch (e) {
       setStartError(e.message);
@@ -69,6 +69,7 @@ export default function FormGroup() {
         pickupText,
         dropText,
         pickupTime: pickupISO,
+        kind: 'transit',
         onStageChange: setStage,
       });
       setMyRequestId(requestId);
@@ -94,7 +95,7 @@ export default function FormGroup() {
               Form a group
             </h1>
             <p style={{ margin: '0 0 32px', fontSize: 14.5, color: 'rgba(33,28,38,.55)' }}>
-              Enter your route and time to find students heading your way.
+              Travelling by bus, train or metro? Find students going your way and agree where to meet. No auto is booked here — use Book a ride for that.
             </p>
 
             {loadingNodes ? (
@@ -218,7 +219,7 @@ export default function FormGroup() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 32 }}>
               {matches.map((m, i) => (
-                <MatchCard key={m.groupKey} group={m} index={i} myRideRequestId={myRequestId} />
+                <MatchCard key={m.groupKey} group={m} index={i} myRideRequestId={myRequestId} kind="transit" />
               ))}
             </div>
           )}

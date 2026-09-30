@@ -1,10 +1,19 @@
+import { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
+import { getMe } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
   const { user, logout } = useAuth();
   
   const initials = user?.initials || '??';
+
+  // Permanent code the student reads out to the driver at pickup.
+  const [riderCode, setRiderCode] = useState(user?.riderCode ?? null);
+  useEffect(() => {
+    if (riderCode) return;
+    getMe().then((me) => setRiderCode(me.riderCode)).catch(() => {});
+  }, [riderCode]);
   
   return (
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
@@ -14,6 +23,16 @@ export default function Profile() {
         <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 32px' }}>
           Profile & Settings
         </h1>
+
+        <div className="card" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div className="input-label" style={{ marginBottom: 4 }}>Your rider code</div>
+            <div style={{ fontSize: 13, color: 'rgba(33,28,38,.55)', fontWeight: 600, maxWidth: 420 }}>
+              Give this to the driver when you get in. It never changes, and using it starts your ride — after that you can't join or leave other groups.
+            </div>
+          </div>
+          <div style={{ font: '700 34px Familjen Grotesk,sans-serif', letterSpacing: '.18em' }}>{riderCode || '••••••'}</div>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
           {/* Identity Card */}

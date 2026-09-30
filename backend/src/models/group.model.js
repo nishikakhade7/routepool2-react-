@@ -4,13 +4,14 @@ if (mock) {
 } else {
   const prisma = require('../config/prisma');
 
-  async function create({ pickupNodeId, departureTime, totalFare }, tx) {
+  async function create({ pickupNodeId, departureTime, totalFare, kind = 'auto' }, tx) {
     const client = tx || prisma;
     return client.group.create({
       data: {
         pickup_node_id: pickupNodeId,
         departure_time: new Date(departureTime),
         total_fare:     totalFare,
+        kind,
         status:         'forming',
       },
     });
@@ -18,6 +19,10 @@ if (mock) {
 
   async function findById(id) {
     return prisma.group.findUnique({ where: { id } });
+  }
+
+  async function setMeeting(id, { meetingPoint, transitMode }) {
+    return prisma.group.update({ where: { id }, data: { meeting_point: meetingPoint, transit_mode: transitMode } });
   }
 
   async function listForming() {
@@ -63,5 +68,5 @@ if (mock) {
     return drivers.get(id);
   }
 
-  module.exports = { create, findById, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent };
+  module.exports = { create, findById, setMeeting, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent };
 }

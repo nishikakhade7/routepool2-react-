@@ -10,8 +10,12 @@ const listAvailable = asyncHandler(async (req, res) => {
   res.json({ groups: await groupsService.listAvailable(req.user.id) });
 });
 
-const bookSolo = asyncHandler(async (req, res) => {
-  res.status(201).json(await groupsService.bookSolo(req.user.id, req.body));
+const board = asyncHandler(async (req, res) => {
+  res.json(await groupsService.board(req.params.groupId, req.user.id, req.body.code));
+});
+
+const setMeeting = asyncHandler(async (req, res) => {
+  res.json(await groupsService.setMeeting(req.params.groupId, req.user.id, req.body));
 });
 
 const listMine = asyncHandler(async (req, res) => {
@@ -44,4 +48,4 @@ const postChat = asyncHandler(async (req, res) => {
   res.status(201).json(message);
 });
 
-module.exports = { join, bookSolo, listAvailable, listMine, joinById, getGroup, leave, getDriver, getChat, postChat };
+module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, getChat, postChat };

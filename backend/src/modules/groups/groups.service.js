@@ -49,16 +49,26 @@ function alreadyInGroupMessage(g) {
   return `You're already booked on a ride for ${time}. Leave or cancel it (Joined groups page) before booking another.`;
 }
 
-async function assertNoOtherActiveGroup(userId, exceptGroupId) {
-  const other = await activeGroupOf(userId, exceptGroupId);
-  if (other) throw ApiError.conflict(alreadyInGroupMessage(other));
+// A rider may hold seats in several groups at once - plans change, and a pool
+// might not fill. What stops them is boarding: once they hand the driver their
+// rider code, that ride has started and the other seats are no longer theirs to take.
+async function boardedBlockReason(userId) {
+  const boarded = await groupMemberModel.boardedMembershipOf(userId);
+  return boarded ? "You've already boarded a ride (you gave the driver your rider code), so you can't join another group." : null;
+}
+
+async function assertNotBoarded(userId) {
+  const reason = await boardedBlockReason(userId);
+  if (reason) throw ApiError.conflict(reason);
 }
 
 // Joins (or creates) the group made up of exactly `memberRideRequestIds`.
 // The caller must own `rideRequestId`, one of the ids in that set - this is
 // how both the first rider (creating the group) and later riders (joining
 // a group a groupmate already locked in) go through the same endpoint.
-const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds }) => {
+// kind: 'auto' = pooled auto ride (Book a ride), 'transit' = public-transport
+// group (Form a group, which books no auto and gets no driver).
+const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, kind = 'auto' }) => {
   if (!memberRideRequestIds.includes(rideRequestId)) {
     throw ApiError.badRequest('rideRequestId must be included in memberRideRequestIds');
   }
@@ -100,9 +110,9 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds }) 
   for (const r of requests) {
     if (r.status === 'matched' && r.group_id === existingGroupId) continue; // already in this group
     if (r.user_id === userId) {
-      await assertNoOtherActiveGroup(userId, existingGroupId);
-    } else if (await activeGroupOf(r.user_id, existingGroupId)) {
-      throw ApiError.conflict('One of the selected riders is already in another group');
+      await assertNotBoarded(userId);
+    } else if (await boardedBlockReason(r.user_id)) {
+      throw ApiError.conflict('One of the selected riders has already boarded another ride');
     }
   }
 
@@ -137,7 +147,7 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds }) 
     let gid = existingGroupId;
     if (!gid) {
       const departureTime = new Date(Math.max(...requests.map((r) => new Date(r.window_start).getTime())));
-      const created = await groupModel.create({ pickupNodeId: own.pickup_node_id, departureTime, totalFare }, client);
+      const created = await groupModel.create({ pickupNodeId: own.pickup_node_id, departureTime, totalFare, kind }, client);
       gid = created.id;
     } else {
       await groupModel.updateTotalFare(gid, totalFare, client);
@@ -198,8 +208,7 @@ async function listAvailable(userId) {
   };
   // Only forming groups: joining goes through the Book page's search -> confirm
   // flow, which joins groups (a lone open request is a search, not a group).
-  const mine = await activeGroupOf(userId);
-  const joinBlockedReason = mine ? alreadyInGroupMessage(mine) : null;
+  const joinBlockedReason = await boardedBlockReason(userId);
 
   // Every live group the student could care about: the ones they can join, plus
   // the ones they are already in (flagged isMine). Hiding their own made the
@@ -271,6 +280,9 @@ async function describeGroup(g, members, userId, joinAs = false) {
   return {
     id: g.id,
     status: g.status,
+    kind: g.kind || 'auto',
+    meetingPoint: g.meeting_point || null,
+    transitMode: g.transit_mode || null,
     pickupName: pickup?.name,
     dropName: far.drop_name,
     pickupTime: pickupTimeOf(g).toISOString(),
@@ -296,7 +308,7 @@ async function listMine(userId) {
 // Legacy direct join (the Dashboard now sends users through the Book flow);
 // kept for API compatibility, with the same one-active-group rule up front.
 async function joinById(userId, id) {
-  await assertNoOtherActiveGroup(userId);
+  await assertNotBoarded(userId);
   const g = await groupModel.findById(id);
   if (!g) {
     const other = await rideRequestModel.findById(id);
@@ -334,12 +346,17 @@ async function getGroup(groupId, userId) {
     totalFare: fare.totalFare,
     distanceKm: fare.distanceKm,
     seatsLeft: MAX_GROUP_SIZE - members.length,
+    kind: g.kind || 'auto',
+    meetingPoint: g.meeting_point || null,
+    transitMode: g.transit_mode || null,
     leaveLockedReason: leaveLockedReason(g),
     pickupNode: pickup ? { id: pickup.id, name: pickup.name, shortName: pickup.shortName } : null,
     memberRideRequestIds: members.map((m) => m.ride_request_id),
     fare,
+    boarded: Boolean(members.find((m) => m.user_id === userId)?.boarded_at),
     members: members.map((m, i) => ({
       userId: m.user_id,
+      boarded: Boolean(m.boarded_at),
       rideRequestId: m.ride_request_id,
       name: m.name,
       initials: m.initials,
@@ -351,6 +368,27 @@ async function getGroup(groupId, userId) {
       soloFare: fare.members[i].soloFare,
     })),
   };
+}
+
+// Where and how a public-transport group meets. Any member can set it; auto pools
+// don't have one (they share a booked auto, not a bus).
+const TRANSIT_MODES = ['bus', 'train', 'metro', 'walk', 'other'];
+async function setMeeting(groupId, userId, { meetingPoint, transitMode }) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  if ((g.kind || 'auto') !== 'transit') throw ApiError.badRequest('Only public-transport groups have meeting details');
+  await groupModel.setMeeting(groupId, { meetingPoint: meetingPoint?.trim() || null, transitMode: transitMode || null });
+  return getGroup(groupId, userId);
+}
+
+// The rider gives the driver their permanent rider code; the driver enters it and
+// the ride starts for that rider. From here they can't join or leave anything else.
+async function board(groupId, userId, code) {
+  await assertMembership(groupId, userId);
+  const expected = await userModel.ensureRiderCode(userId);
+  if (String(code).trim() !== expected) throw ApiError.badRequest('That rider code does not match');
+  await groupMemberModel.markBoarded(groupId, userId);
+  return getGroup(groupId, userId);
 }
 
 // "Can't make it": drop the rider (and their request), re-split the fare for
@@ -366,6 +404,9 @@ const leave = oneAtATime(async (groupId, userId) => {
   const g = await groupModel.findById(groupId);
   const locked = leaveLockedReason(g);
   if (locked) throw ApiError.conflict(locked);
+  if ((await groupMemberModel.listByGroup(groupId)).find((m) => m.user_id === userId)?.boarded_at) {
+    throw ApiError.conflict("You've already boarded this ride.");
+  }
   const mine = (await groupMemberModel.listByGroup(groupId)).find((m) => m.user_id === userId);
   await groupMemberModel.remove(groupId, userId);
   await rideRequestModel.cancel(mine.ride_request_id);
@@ -411,17 +452,6 @@ async function getDriver(groupId, userId) {
   };
 }
 
-// "Book a ride" is a solo ride: one rider, their own auto, full fare. It is stored
-// as a group of one closed straight away ('confirmed', never 'forming'), so matching
-// and the available-groups list - which only ever look at open requests and forming
-// groups - can never pool another student into it.
-async function bookSolo(userId, body) {
-  const request = await ridesService.createRequest(userId, body);
-  const group = await join(userId, { rideRequestId: request.id, memberRideRequestIds: [request.id] });
-  await groupModel.setStatus(group.id, 'confirmed');
-  return { ...group, status: 'confirmed', solo: true };
-}
-
 async function assertMembership(groupId, userId) {
   const isMember = await groupMemberModel.isMember(groupId, userId);
   if (!isMember) throw ApiError.forbidden('You are not a member of this group');
@@ -456,4 +486,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, bookSolo, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };
+module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };

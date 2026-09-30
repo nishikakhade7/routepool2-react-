@@ -7,7 +7,9 @@ import BookingConfirmation from '../components/BookingConfirmation';
 import CustomTimePicker from '../components/CustomTimePicker';
 import PaymentMethodSelect from '../components/PaymentMethodSelect';
 import PaymentSuccess from '../components/PaymentSuccess';
-import { bookSoloRide, getGroup, leaveGroup, getAssignedDriver } from '../api/client';
+import { joinGroup, getGroup, leaveGroup, getMatches, getAssignedDriver, boardRide, getMe } from '../api/client';
+import MatchCard from '../components/MatchCard';
+import { runMatchingFlow } from '../api/matching';
 import { formatRating, formatEta } from '../utils/formatDriver';
 
 // Reference-design widths per stage (design/RoutePool.dc.html screens 10-15):
@@ -47,25 +49,52 @@ function ScanningVisual({ color }) {
 }
 
 export default function Book() {
-  // Solo booking. Stage: 'where' -> 'searching' (booking) -> 'confirm'
-  //   -> 'driverAssigned' -> 'payment' -> 'success'.
-  // Pooling with other students lives on "Form a group", not here.
+  // Stage: 'where' -> 'searching' -> 'grouping' -> 'results' (pick a group)
+  //   -> 'confirm' -> 'driverAssigned' -> 'payment' -> 'success'
+  // Dashboard "Join" opens /book?group=&pickup=&drop=&time=: prefill the search,
+  // run the normal flow, and go straight to confirming that group.
   const [searchParams, setSearchParams] = useSearchParams();
-  const [stage, setStage] = useState('where');
+  const preselectRef = useRef(searchParams.get('group'));
+  const [stage, setStage] = useState(() => (searchParams.get('group') ? 'searching' : 'where'));
 
   // Form data
   const [pickupText, setPickupText] = useState(() => searchParams.get('pickup') || '');
   const [dropText, setDropText] = useState(() => searchParams.get('drop') || '');
   const [pickupTime, setPickupTime] = useState(() => searchParams.get('time') || ''); // HH:MM today; empty = now
 
+  // Search results: this search's ride request + every group it could join.
+  const [myRequest, setMyRequest] = useState(null);
+  const [matches, setMatches] = useState([]);
+
   // The group the user picked (and has joined) — refreshed from the backend.
   const [groupId, setGroupId] = useState(null);
   const [group, setGroup] = useState(null);
   const [driver, setDriver] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(null);
+  const [riderCode, setRiderCode] = useState(null);
+  const [boarding, setBoarding] = useState(false);
+
+  // The rider's permanent code, shown once a driver is on the way.
+  useEffect(() => {
+    if (stage !== 'driverAssigned' || riderCode) return;
+    getMe().then((me) => setRiderCode(me.riderCode)).catch(() => {});
+  }, [stage, riderCode]);
+
+  async function handleBoarded() {
+    setBoarding(true);
+    setBookError(null);
+    try {
+      setGroup(await boardRide(groupId, riderCode));
+    } catch (e) {
+      setBookError(e.message);
+    } finally {
+      setBoarding(false);
+    }
+  }
 
   const [bookError, setBookError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [startingNew, setStartingNew] = useState(false);
 
   // True cancellation only ever means "this component unmounted" — NOT
   // "stage changed", since the matching flow itself changes `stage` via
@@ -84,7 +113,66 @@ export default function Book() {
     return () => { isMountedRef.current = false; };
   }, []);
 
+  // Kick off the matching flow once the user reaches 'searching'; it drives
+  // 'searching' -> 'grouping' itself via onStageChange, then lands on
+  // 'results'. Guarded by a ref so its own stage changes don't restart it.
+  const matchingStartedRef = useRef(false);
+  useEffect(() => {
+    if (stage !== 'searching') {
+      matchingStartedRef.current = false;
+      return;
+    }
+    if (matchingStartedRef.current) return;
+    matchingStartedRef.current = true;
 
+    (async () => {
+      try {
+        let pickupISO;
+        if (pickupTime) {
+          const [hh, mm] = pickupTime.split(':').map(Number);
+          const d = new Date();
+          d.setHours(hh, mm, 0, 0);
+          pickupISO = d.toISOString();
+        }
+        const { request, matches: found } = await runMatchingFlow({ pickupText, dropText, pickupTime: pickupISO, onStageChange: setStage });
+        if (!isMountedRef.current) return;
+        setMyRequest(request);
+        setMatches(found);
+        const wantedId = preselectRef.current;
+        preselectRef.current = null;
+        if (wantedId) {
+          const wanted = found.find((g) => g.id === wantedId);
+          if (wanted) {
+            try {
+              await handleSelectGroup(wanted, request);
+              return;
+            } catch (e) {
+              setBookError(e.message);
+            }
+          } else {
+            setBookError('That group is no longer open for this route and time — here is what is available now.');
+          }
+        }
+        // Nobody to pool with yet: open the group anyway, so the next student
+        // booking a nearby drop within the matching window pools into THIS group
+        // instead of starting a second one for the same trip.
+        if (found.length === 0) {
+          try {
+            await handleStartNewGroup(request);
+            return;
+          } catch (e) {
+            setBookError(e.message);
+          }
+        }
+        setStage('results');
+      } catch (e) {
+        console.error('[Book] runMatchingFlow failed:', e);
+        if (!isMountedRef.current) return;
+        setBookError(e.message || 'Something went wrong while finding a match. Please try again.');
+        setStage('where');
+      }
+    })();
+  }, [stage, pickupText, dropText, pickupTime]);
 
   // While the user is looking at their group, keep it in sync with the backend
   // so riders joining/leaving from other browsers show up here too.
@@ -106,40 +194,40 @@ export default function Book() {
     setStage('confirm');
   }
 
-  // Book a ride is a SOLO ride: no matching, no pooling. It books the rider
-  // their own auto straight away (a one-person group the backend closes, so
-  // nobody can join it) and goes to the confirm screen. Pooling lives on
-  // "Form a group". Guarded by a ref so its own stage change doesn't restart it.
-  const bookingStartedRef = useRef(false);
-  useEffect(() => {
-    if (stage !== 'searching') {
-      bookingStartedRef.current = false;
-      return;
+  // d. User picks one of the listed groups -> join it, then confirm screen.
+  async function handleSelectGroup(g, req = myRequest) {
+    try {
+      const joined = await joinGroup(req.id, g.memberRideRequestIds);
+      await openGroup(joined.id);
+    } catch (e) {
+      // Group may have filled up or changed since the list loaded - refresh it.
+      getMatches(req.id).then(setMatches).catch(() => {});
+      throw e;
     }
-    if (bookingStartedRef.current) return;
-    bookingStartedRef.current = true;
+  }
 
-    (async () => {
-      try {
-        let pickupISO;
-        if (pickupTime) {
-          const [hh, mm] = pickupTime.split(':').map(Number);
-          const d = new Date();
-          d.setHours(hh, mm, 0, 0);
-          pickupISO = d.toISOString();
-        }
-        const booked = await bookSoloRide({ pickupText, dropText, pickupTime: pickupISO || new Date().toISOString() });
-        if (!isMountedRef.current) return;
-        await openGroup(booked.id);
-      } catch (e) {
-        console.error('[Book] solo booking failed:', e);
-        if (!isMountedRef.current) return;
-        setBookError(e.message || 'Something went wrong while booking. Please try again.');
-        setStage('where');
-      }
-    })();
-  }, [stage, pickupText, dropText, pickupTime]);
+  // No suitable group: explicitly start a new one with this rider as the first member.
+  async function handleStartNewGroup(req = myRequest) {
+    setStartingNew(true);
+    setBookError(null);
+    try {
+      const started = await joinGroup(req.id, [req.id]);
+      await openGroup(started.id);
+    } catch (e) {
+      setBookError(e.message);
+    } finally {
+      if (isMountedRef.current) setStartingNew(false);
+    }
+  }
 
+  async function refreshMatches() {
+    setBookError(null);
+    try {
+      setMatches(await getMatches(myRequest.id));
+    } catch (e) {
+      setBookError(e.message);
+    }
+  }
 
   // e. "Can't make it? Leave group" -> removed from the group, back to search.
   async function handleLeaveGroup() {
@@ -175,8 +263,9 @@ export default function Book() {
   const youShare = youMember?.fareShare ?? group?.totalFare ?? 0;
   const hasRealSavings = typeof youShare === 'number' && typeof youMember?.soloFare === 'number';
   const youSave = hasRealSavings ? Math.max(0, youMember.soloFare - youShare) : 0;
-  const pickupName = group?.pickupNode?.name || pickupText;
-  const dropName = youMember?.dropNode?.name || dropText;
+  const pickupName = group?.pickupNode?.name || myRequest?.pickup?.name || pickupText;
+  const dropName = youMember?.dropNode?.name || myRequest?.drop?.name || dropText;
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '');
 
   return (
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
@@ -191,7 +280,7 @@ export default function Book() {
               Where are you going?
             </h1>
             <p style={{ margin: '0 0 28px', fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
-              Book your own auto — you ride alone and pay the full fare. To share the ride and split the fare, use Form a group.
+              Enter your pickup and drop-off — RoutePool matches you with students already heading your way and pools an auto automatically.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.15fr .85fr', gap: 22, alignItems: 'start' }}>
@@ -269,7 +358,7 @@ export default function Book() {
                 <RouteVisual height={180} variant="dark" animated />
                 <div style={{ textAlign: 'center', marginTop: 24, font: '600 14px Karla,sans-serif', color: 'rgba(253,250,244,.6)' }}>
                   {pickupText && dropText
-                    ? `${pickupText} → ${dropText} — your own auto, full fare, no sharing`
+                    ? `${pickupText} → ${dropText} — you'll see every group you can join, with your price for each`
                     : "Enter both pickup and drop-off to preview your route"}
                 </div>
               </div>
@@ -309,6 +398,53 @@ export default function Book() {
           </div>
         )}
 
+        {stage === 'results' && myRequest && (
+          <div className="animate-rise">
+            <VisionBadge />
+            <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 40, letterSpacing: '-.035em', margin: '0 0 8px' }}>
+              {matches.length ? `${matches.length} group${matches.length === 1 ? '' : 's'} you can join` : 'No groups yet'}
+            </h1>
+            <p style={{ margin: '0 0 24px', fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
+              {myRequest.pickup?.name} → {myRequest.drop?.name} · pickup {fmtTime(myRequest.pickupTime)} · {myRequest.estimatedDistanceKm} km
+              {matches.length ? ' · prices are your share if you join' : ''}
+            </p>
+
+            {bookError && <div className="error-msg-red" style={{ marginBottom: 16 }}>{bookError}</div>}
+
+            {matches.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+                {matches.map((m, i) => (
+                  <MatchCard key={m.id || m.groupKey} group={m} index={i} myRideRequestId={myRequest.id} onSelect={handleSelectGroup} />
+                ))}
+              </div>
+            ) : (
+              <div className="card" style={{ padding: 32 }}>
+                <div style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 8 }}>
+                  No groups heading your way yet — we'll form a new one
+                </div>
+                <p style={{ margin: '0 0 20px', fontSize: 14.5, color: 'rgba(33,28,38,.6)', lineHeight: 1.55 }}>
+                  Nobody going from {myRequest.pickup?.name} towards {myRequest.drop?.name} around {fmtTime(myRequest.pickupTime)} has an open group.
+                  Start one and you'll be its first rider — students who search this route within the time window will see it and can join.
+                  Solo fare for now: ₹{Number(myRequest.soloFare).toFixed(0)}, and it drops as others join.
+                </p>
+                <button className="btn-accent" style={{ width: 'auto', padding: '14px 24px', opacity: startingNew ? 0.7 : 1 }} disabled={startingNew} onClick={handleStartNewGroup}>
+                  {startingNew ? 'Starting…' : 'Start a new group'}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
+              <button className="btn-ghost" style={{ width: 'auto' }} onClick={() => setStage('where')}>Change search</button>
+              <button className="btn-ghost" style={{ width: 'auto' }} onClick={refreshMatches}>Refresh list</button>
+              {matches.length > 0 && (
+                <button className="btn-ghost" style={{ width: 'auto' }} disabled={startingNew} onClick={handleStartNewGroup}>
+                  None of these work? Start a new group
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {stage === 'driverAssigned' && group && driver && (
           <div className="animate-rise" style={{ textAlign: 'center' }}>
             <VisionBadge />
@@ -325,7 +461,7 @@ export default function Book() {
               Driver assigned
             </h1>
             <p style={{ margin: '0 0 28px', fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
-              Your own auto. {driver.name} is on the way to {pickupName || 'your pickup point'}.
+              Your pool of {group.members.length}. {driver.name} is on the way to {pickupName || 'your pickup point'}.
             </p>
 
             <div className="card animate-rise" style={{ textAlign: 'left', padding: 30 }}>
@@ -361,6 +497,25 @@ export default function Book() {
               </div>
             </div>
 
+            {/* The rider reads this code out to the driver. It never changes, and
+                using it starts the ride: no joining or leaving other groups after. */}
+            <div className="card" style={{ marginTop: 20, textAlign: 'center' }}>
+              <div className="input-label" style={{ marginBottom: 6 }}>Your rider code</div>
+              <div style={{ font: '700 34px Familjen Grotesk,sans-serif', letterSpacing: '.18em' }}>{riderCode || '••••••'}</div>
+              <p style={{ margin: '8px 0 0', fontSize: 13, color: 'rgba(33,28,38,.55)', fontWeight: 600 }}>
+                {group.boarded
+                  ? '✓ Boarded — your ride has started, so you can\'t join or leave other groups.'
+                  : 'Give this to the driver when you get in. Same code every ride.'}
+              </p>
+              {!group.boarded && (
+                <button className="btn-ghost" style={{ width: 'auto', marginTop: 12, padding: '10px 18px' }} disabled={boarding || !riderCode} onClick={handleBoarded}>
+                  {boarding ? 'Confirming…' : "I've given the driver my code"}
+                </button>
+              )}
+            </div>
+
+            {bookError && <div className="error-msg-red" style={{ marginTop: 16 }}>{bookError}</div>}
+
             <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setStage('payment')}>
               Continue to payment
             </button>
@@ -371,7 +526,6 @@ export default function Book() {
           <>
             {bookError && <div className="error-msg-red" style={{ marginBottom: 16 }}>{bookError}</div>}
             <BookingConfirmation
-              solo
               group={group}
               groupId={groupId}
               continueLabel="Confirm booking"

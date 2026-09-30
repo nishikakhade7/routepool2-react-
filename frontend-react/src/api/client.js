@@ -115,13 +115,8 @@ export function requestRide({ pickupNodeId, dropNodeId, pickupText, dropText, pi
   return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupText, dropText, pickupTime });
 }
 
-// "Book a ride": a solo ride, stored as a one-person group nobody can join.
-export function bookSoloRide({ pickupText, dropText, pickupTime }) {
-  return request('POST', '/groups/solo', { pickupText, dropText, pickupTime });
-}
-
-export function getMatches(rideRequestId) {
-  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}`).then((res) => res.groups ?? res);
+export function getMatches(rideRequestId, kind = 'auto') {
+  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}&kind=${kind}`).then((res) => res.groups ?? res);
 }
 
 // ---- Groups ---------------------------------------------
@@ -129,8 +124,13 @@ export function getMatches(rideRequestId) {
  * @param {string} rideRequestId           The caller's own ride request ID
  * @param {string[]} memberRideRequestIds  All member request IDs (must include rideRequestId)
  */
-export function joinGroup(rideRequestId, memberRideRequestIds) {
-  return request('POST', '/groups/join', { rideRequestId, memberRideRequestIds });
+export function joinGroup(rideRequestId, memberRideRequestIds, kind = 'auto') {
+  return request('POST', '/groups/join', { rideRequestId, memberRideRequestIds, kind });
+}
+
+// Public-transport groups only: where and how the group meets.
+export function setGroupMeeting(groupId, { meetingPoint, transitMode }) {
+  return request('PATCH', `/groups/${groupId}/meeting`, { meetingPoint, transitMode });
 }
 
 export function getAvailableGroups() {
@@ -152,6 +152,17 @@ export function getGroup(groupId) {
 
 export function leaveGroup(groupId) {
   return request('POST', `/groups/${groupId}/leave`);
+}
+
+// The rider reads their permanent code out to the driver; this records that the
+// ride has started for them (after which they can't join or leave groups).
+export function boardRide(groupId, code) {
+  return request('POST', `/groups/${groupId}/board`, { code });
+}
+
+// Current student, including their permanent rider code.
+export function getMe() {
+  return request('GET', '/auth/me');
 }
 
 export function getChat(groupId) {

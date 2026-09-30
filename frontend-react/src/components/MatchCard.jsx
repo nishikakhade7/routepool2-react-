@@ -32,7 +32,7 @@ const LINE_COLORS = ['#F2A230', '#8A2B6B', '#157F63', '#5B57E0'];
  *   the group back to the page (which joins it and shows the confirm screen)
  *   instead of joining here and navigating away (FormGroup flow).
  */
-export default function MatchCard({ group, index, myRideRequestId, onSelect }) {
+export default function MatchCard({ group, index, myRideRequestId, onSelect, kind = 'auto' }) {
   const navigate = useNavigate();
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState(null);
@@ -69,7 +69,7 @@ export default function MatchCard({ group, index, myRideRequestId, onSelect }) {
     }
 
     try {
-      const result = await joinGroup(myRideRequestId, group.memberRideRequestIds);
+      const result = await joinGroup(myRideRequestId, group.memberRideRequestIds, kind);
       navigate(`/groups?joined=${result.id}`);
     } catch (e) {
       setJoinError(e.message);

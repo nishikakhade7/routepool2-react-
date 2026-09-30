@@ -60,7 +60,9 @@ function routeSimilarity(a, b, pathTo) {
  *
  * Each result includes the fare split as it would be with this rider added.
  */
-async function findMatches(rideRequestId, userId) {
+// kind: only pool with groups of the same kind - an auto pool (Book a ride) and a
+// public-transport group (Form a group) are different trips.
+async function findMatches(rideRequestId, userId, kind = 'auto') {
   const target = await rideRequestModel.findById(rideRequestId);
   if (!target || target.user_id !== userId) throw ApiError.notFound('Ride request not found');
   if (target.status !== 'open') throw ApiError.badRequest('This request is no longer open');
@@ -75,6 +77,7 @@ async function findMatches(rideRequestId, userId) {
 
   const results = [];
   for (const g of await groupModel.listForming()) {
+    if ((g.kind || 'auto') !== kind) continue;
     if (g.pickup_node_id !== target.pickup_node_id) continue;
     const members = await groupMemberModel.listByGroup(g.id);
     if (members.length === 0 || members.length >= MAX_GROUP_SIZE) continue;

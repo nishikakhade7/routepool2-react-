@@ -74,8 +74,24 @@ async function verifyOtp(email, code) {
       isVerified: user.is_verified,
       totalRides: user.total_rides,
       totalSavings: Number(user.total_savings),
+      // Permanent code the rider reads out to the driver at pickup.
+      riderCode: await userModel.ensureRiderCode(user.id),
     },
   };
 }
 
-module.exports = { sendOtp, verifyOtp };
+async function me(userId) {
+  const user = await userModel.findById(userId);
+  if (!user) throw ApiError.unauthorized('Session expired, please sign in again');
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    initials: user.initials,
+    branch: user.branch,
+    totalRides: user.total_rides,
+    riderCode: await userModel.ensureRiderCode(user.id),
+  };
+}
+
+module.exports = { sendOtp, verifyOtp, me };

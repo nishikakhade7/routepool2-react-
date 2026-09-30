@@ -76,7 +76,7 @@ function buildMockMatch(pickupText, dropText) {
  *   without duplicating the timing/branching here.
  * @returns {Promise<{ requestId: string|null, matches: object[] }>}
  */
-export async function runMatchingFlow({ pickupText, dropText, pickupTime, onStageChange }) {
+export async function runMatchingFlow({ pickupText, dropText, pickupTime, kind = 'auto', onStageChange }) {
   onStageChange?.('searching');
 
   if (USE_MOCK_MATCHING) {
@@ -95,6 +95,6 @@ export async function runMatchingFlow({ pickupText, dropText, pickupTime, onStag
   onStageChange?.('grouping');
   await new Promise((r) => setTimeout(r, STAGE_DELAY_MS));
 
-  const matches = await getMatches(req.id);
+  const matches = await getMatches(req.id, kind);
   return { requestId: req.id, request: req, matches };
 }
