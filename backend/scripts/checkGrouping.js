@@ -74,5 +74,15 @@ const joinGroup = (token, req, ids) => call('POST', '/groups/join', { rideReques
   assert.equal((await call('GET', `/groups/${g1.id}`, null, s1)).data.members.length, 2);
   assert.equal((await search(s4, 'Azad Nagar', 'Andheri', 4)).groups[0].id, g1.id);
 
+  // Dashboard endpoints: a 500 here used to reach the UI as "Couldn't load open groups".
+  const available = await call('GET', '/groups/available', null, s1);
+  assert.equal(available.status, 200, JSON.stringify(available.data));
+  assert.ok(Array.isArray(available.data.groups), 'available should return a list');
+  const mineList = await call('GET', '/groups/mine', null, s1);
+  assert.equal(mineList.status, 200, JSON.stringify(mineList.data));
+  assert.ok(mineList.data.groups.some((g) => g.members.length > 0), 'my groups should come back with members');
+  // A rider in a group still sees it in the shared list, flagged as theirs.
+  assert.ok(available.data.groups.every((g) => typeof g.isMine === 'boolean'), 'each listed group says whether it is mine');
+
   console.log('grouping check passed');
 })().catch((e) => { console.error(e); process.exit(1); });

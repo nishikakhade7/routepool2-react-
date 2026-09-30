@@ -214,7 +214,13 @@ async function listAvailable(userId) {
   // the ones they are already in (flagged isMine). Hiding their own made the
   // shared list look per-user - "I see groups, my friend sees none".
   const groups = await groupModel.listForming();
-  if (mine && !groups.some((g) => g.id === mine.id)) groups.push(mine);
+  // A rider's own group may already be full or confirmed, so listForming() misses
+  // it: add any group they're in, so the shared list looks the same to everyone.
+  for (const id of new Set(await groupMemberModel.listGroupIdsByUser(userId))) {
+    if (groups.some((g) => g.id === id)) continue;
+    const g = await groupModel.findById(id);
+    if (g && g.status !== 'cancelled') groups.push(g);
+  }
 
   for (const g of groups) {
     const members = await groupMemberModel.listByGroup(g.id);
