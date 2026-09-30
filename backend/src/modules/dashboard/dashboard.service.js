@@ -146,29 +146,96 @@ async function getBusyRoutes() {
   }));
 }
 
+// Campus insights: every number derived from real ride data, never from the
+// seeded users.total_savings column (which no real ride ever updates).
+// A "pool" = a non-cancelled group of 2+ riders; a solo ride isn't one.
+// Savings = what each pooled rider would have paid alone minus their share.
 async function getCampusStats() {
+  const HOUR_BUCKETS = [8, 10, 12, 14, 16, 18, 20];
+  const bucketOf = (date) => {
+    const h = new Date(date).getHours();
+    for (let i = HOUR_BUCKETS.length - 1; i >= 0; i--) if (h >= HOUR_BUCKETS[i]) return i;
+    return null; // before the first bucket: not shown on the chart
+  };
+
   if (USE_MOCK) {
     const { _db } = require('../../db/mockStore');
-    const totalPools   = _db.groups.length;
-    const totalUsers   = _db.users.length;
-    const totalSavings = _db.users.reduce((s, u) => s + Number(u.total_savings || 0), 0);
-    const avgFare = totalPools > 0
-      ? _db.groups.reduce((s, g) => s + Number(g.total_fare || 0), 0) / totalPools
+    const liveRequests = _db.rideRequests.filter((r) => r.status !== 'cancelled');
+    const reqById = Object.fromEntries(_db.rideRequests.map((r) => [r.id, r]));
+
+    const pools = _db.groups
+      .filter((g) => g.status !== 'cancelled')
+      .map((g) => ({ g, members: _db.groupMembers.filter((m) => m.group_id === g.id) }))
+      .filter(({ members }) => members.length >= 2);
+
+    const totalSavings = pools.reduce((sum, { members }) => sum + members.reduce((s, m) => {
+      const solo = Number(reqById[m.ride_request_id]?.solo_fare || 0);
+      return s + Math.max(0, solo - Number(m.fare_share || 0));
+    }, 0), 0);
+
+    const avgFare = pools.length
+      ? pools.reduce((s, { g }) => s + Number(g.total_fare || 0), 0) / pools.length
       : 0;
-    return { totalUsers, totalPools, avgFare: +avgFare.toFixed(0), totalSavings: +totalSavings.toFixed(0) };
+
+    const byHour = HOUR_BUCKETS.map(() => 0);
+    for (const r of liveRequests) {
+      const i = bucketOf(r.window_start);
+      if (i !== null) byHour[i] += 1;
+    }
+
+    return {
+      totalUsers: new Set(liveRequests.map((r) => r.user_id)).size, // students who actually requested a ride
+      totalPools: pools.length,
+      avgFare: +avgFare.toFixed(0),
+      totalSavings: +totalSavings.toFixed(0),
+      hourLabels: HOUR_BUCKETS.map((h) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`),
+      byHour,
+    };
   }
 
   const prisma = require('../../config/prisma');
-  const [groupStats, userStats] = await Promise.all([
-    prisma.$queryRaw`SELECT COUNT(*)::int AS total_pools, AVG(total_fare) AS avg_fare FROM groups`,
-    prisma.$queryRaw`SELECT COUNT(*)::int AS total_users, SUM(total_savings) AS total_savings FROM users`,
+  const [[totals], [savings], hours] = await Promise.all([
+    prisma.$queryRaw`
+      WITH pools AS (
+        SELECT g.id, g.total_fare
+        FROM groups g
+        JOIN group_members gm ON gm.group_id = g.id
+        WHERE g.status <> 'cancelled'
+        GROUP BY g.id, g.total_fare
+        HAVING COUNT(*) >= 2
+      )
+      SELECT (SELECT COUNT(DISTINCT user_id)::int FROM ride_requests WHERE status <> 'cancelled') AS total_users,
+             (SELECT COUNT(*)::int FROM pools)                                                    AS total_pools,
+             (SELECT COALESCE(AVG(total_fare), 0) FROM pools)                                     AS avg_fare`,
+    prisma.$queryRaw`
+      WITH pools AS (
+        SELECT g.id FROM groups g
+        JOIN group_members gm ON gm.group_id = g.id
+        WHERE g.status <> 'cancelled'
+        GROUP BY g.id HAVING COUNT(*) >= 2
+      )
+      SELECT COALESCE(SUM(GREATEST(r.solo_fare - gm.fare_share, 0)), 0) AS total_savings
+      FROM group_members gm
+      JOIN pools p ON p.id = gm.group_id
+      JOIN ride_requests r ON r.id = gm.ride_request_id`,
+    prisma.$queryRaw`
+      SELECT EXTRACT(HOUR FROM window_start)::int AS hour, COUNT(*)::int AS count
+      FROM ride_requests WHERE status <> 'cancelled' GROUP BY hour`,
   ]);
 
+  const byHour = HOUR_BUCKETS.map(() => 0);
+  for (const row of hours) {
+    const i = bucketOf(new Date().setHours(row.hour, 0, 0, 0));
+    if (i !== null) byHour[i] += Number(row.count);
+  }
+
   return {
-    totalUsers:   Number(userStats[0].total_users),
-    totalPools:   Number(groupStats[0].total_pools),
-    avgFare:      +Number(groupStats[0].avg_fare || 0).toFixed(0),
-    totalSavings: Number(userStats[0].total_savings || 0),
+    totalUsers: Number(totals.total_users),
+    totalPools: Number(totals.total_pools),
+    avgFare: +Number(totals.avg_fare || 0).toFixed(0),
+    totalSavings: +Number(savings.total_savings || 0).toFixed(0),
+    hourLabels: HOUR_BUCKETS.map((h) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`),
+    byHour,
   };
 }
 

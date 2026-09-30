@@ -73,9 +73,12 @@ db.edges = STOP_EDGES.map((e) => ({ ...e }));
 setInterval(() => fs.writeFile(DB_FILE, JSON.stringify(db), () => {}), 2000).unref();
 // Immediate save, for changes that must survive an instant restart (dev reset, shutdown).
 const saveNow = () => fs.writeFileSync(DB_FILE, JSON.stringify(db));
-for (const sig of ['SIGINT', 'SIGTERM']) {
+// SIGUSR2 is how nodemon restarts the app on every file save - without it, work
+// from the last couple of seconds (a student who just signed up) is lost.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGUSR2']) {
   process.once(sig, () => { try { saveNow(); } finally { process.exit(0); } });
 }
+process.on('exit', () => { try { saveNow(); } catch { /* best effort */ } });
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 

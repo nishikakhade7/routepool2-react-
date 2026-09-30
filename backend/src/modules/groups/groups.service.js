@@ -13,7 +13,7 @@ const { dijkstra } = require('../../utils/dijkstra');
 const { buildCumulativePath, splitFareBySegments, autoFareForDistance } = require('../../utils/fare');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
-const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
+const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES, LEAVE_LOCK_MINUTES } = require('../../config/matchingConfig');
 const nodeModel = require('../../models/node.model');
 const ridesService = require('../rides/rides.service');
 const { DEMO_DRIVERS, DRIVER_ETA_MINUTES } = require('../../config/drivers');
@@ -45,7 +45,8 @@ async function activeGroupOf(userId, exceptGroupId) {
 // the Dashboard list (so a blocked Join shows the same text as a refused join).
 function alreadyInGroupMessage(g) {
   const time = pickupTimeOf(g).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-  return `You're already in a group for ${time}. Leave it (Joined groups page) before joining another.`;
+  // Covers both a pooled group and a solo ride (Book a ride books a group of one).
+  return `You're already booked on a ride for ${time}. Leave or cancel it (Joined groups page) before booking another.`;
 }
 
 async function assertNoOtherActiveGroup(userId, exceptGroupId) {
@@ -199,11 +200,23 @@ async function listAvailable(userId) {
   // flow, which joins groups (a lone open request is a search, not a group).
   const mine = await activeGroupOf(userId);
   const joinBlockedReason = mine ? alreadyInGroupMessage(mine) : null;
-  for (const g of await groupModel.listForming()) {
+
+  // Every live group the student could care about: the ones they can join, plus
+  // the ones they are already in (flagged isMine). Hiding their own made the
+  // shared list look per-user - "I see groups, my friend sees none".
+  const groups = await groupModel.listForming();
+  if (mine && !groups.some((g) => g.id === mine.id)) groups.push(mine);
+
+  for (const g of groups) {
     const members = await groupMemberModel.listByGroup(g.id);
-    if (members.length === 0 || members.length >= MAX_GROUP_SIZE) continue;
-    if (members.some((m) => m.user_id === userId) || pickupTimeOf(g) < new Date()) continue;
-    await tryPush(`group ${g.id}`, async () => ({ ...await describeGroup(g, members, userId, true), joinBlockedReason }));
+    if (members.length === 0 || pickupTimeOf(g) < new Date()) continue;
+    const isMine = members.some((m) => m.user_id === userId);
+    if (!isMine && (members.length >= MAX_GROUP_SIZE || g.status !== 'forming')) continue;
+    await tryPush(`group ${g.id}`, async () => ({
+      ...await describeGroup(g, members, userId, !isMine),
+      isMine,
+      joinBlockedReason: isMine ? null : joinBlockedReason,
+    }));
   }
   return out.sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
 }
@@ -321,6 +334,7 @@ async function getGroup(groupId, userId) {
     totalFare: fare.totalFare,
     distanceKm: fare.distanceKm,
     seatsLeft: MAX_GROUP_SIZE - members.length,
+    leaveLockedReason: leaveLockedReason(g),
     pickupNode: pickup ? { id: pickup.id, name: pickup.name, shortName: pickup.shortName } : null,
     memberRideRequestIds: members.map((m) => m.ride_request_id),
     fare,
@@ -341,9 +355,17 @@ async function getGroup(groupId, userId) {
 
 // "Can't make it": drop the rider (and their request), re-split the fare for
 // whoever is left, and reopen the group if it had been full.
+// Minutes until pickup, and whether the rider is still allowed to back out.
+const minutesToPickup = (g) => (pickupTimeOf(g).getTime() - Date.now()) / 60000;
+const leaveLockedReason = (g) => (minutesToPickup(g) <= LEAVE_LOCK_MINUTES
+  ? `Pickup is in under ${LEAVE_LOCK_MINUTES} minutes — you're locked in. Message the group if something changed.`
+  : null);
+
 const leave = oneAtATime(async (groupId, userId) => {
   await assertMembership(groupId, userId);
   const g = await groupModel.findById(groupId);
+  const locked = leaveLockedReason(g);
+  if (locked) throw ApiError.conflict(locked);
   const mine = (await groupMemberModel.listByGroup(groupId)).find((m) => m.user_id === userId);
   await groupMemberModel.remove(groupId, userId);
   await rideRequestModel.cancel(mine.ride_request_id);
@@ -389,6 +411,17 @@ async function getDriver(groupId, userId) {
   };
 }
 
+// "Book a ride" is a solo ride: one rider, their own auto, full fare. It is stored
+// as a group of one closed straight away ('confirmed', never 'forming'), so matching
+// and the available-groups list - which only ever look at open requests and forming
+// groups - can never pool another student into it.
+async function bookSolo(userId, body) {
+  const request = await ridesService.createRequest(userId, body);
+  const group = await join(userId, { rideRequestId: request.id, memberRideRequestIds: [request.id] });
+  await groupModel.setStatus(group.id, 'confirmed');
+  return { ...group, status: 'confirmed', solo: true };
+}
+
 async function assertMembership(groupId, userId) {
   const isMember = await groupMemberModel.isMember(groupId, userId);
   if (!isMember) throw ApiError.forbidden('You are not a member of this group');
@@ -423,4 +456,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };
+module.exports = { join, bookSolo, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };

@@ -22,12 +22,28 @@ function getToken() {
   return localStorage.getItem('rp_token');
 }
 
+// The dev backend restarts on every file save (nodemon), and calls in that
+// half-second come back as a proxy 502/504 or a dropped connection. One retry
+// rides over the restart instead of showing "Request failed" all over the page.
+async function fetchWithRetry(url, options) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status !== 502 && res.status !== 504) return res;
+      if (attempt === 1) return res;
+    } catch (err) {
+      if (attempt === 1) throw err; // still unreachable: let the caller show it
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+}
+
 async function request(method, path, body) {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithRetry(`${BASE}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -97,6 +113,11 @@ export function getNodes() {
  */
 export function requestRide({ pickupNodeId, dropNodeId, pickupText, dropText, pickupTime }) {
   return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupText, dropText, pickupTime });
+}
+
+// "Book a ride": a solo ride, stored as a one-person group nobody can join.
+export function bookSoloRide({ pickupText, dropText, pickupTime }) {
+  return request('POST', '/groups/solo', { pickupText, dropText, pickupTime });
 }
 
 export function getMatches(rideRequestId) {

@@ -3,6 +3,7 @@ const otpModel = require('../../models/otp.model');
 const { generateOtp, hashOtp } = require('../../utils/otp');
 const { signToken } = require('../../utils/jwt');
 const ApiError = require('../../utils/ApiError');
+const { sendOtpEmail, mailEnabled } = require('../../utils/mailer');
 const env = require('../../config/env');
 
 function assertAllowedDomain(email) {
@@ -29,14 +30,19 @@ async function sendOtp(email) {
   const expiresAt = new Date(Date.now() + env.otpExpiryMinutes * 60 * 1000);
   await otpModel.create({ email, codeHash, expiresAt });
 
-  // Simulated send: in production this would call an email/SMS provider.
-  console.log(`[otp] ${email} -> ${code} (expires in ${env.otpExpiryMinutes}m)`);
+  try {
+    await sendOtpEmail(email, code);
+  } catch (err) {
+    console.error('[otp] email failed:', err.message);
+    throw new ApiError(502, 'Could not send the verification email. Try again.');
+  }
 
   return {
     message: 'Verification code sent',
     expiresInSeconds: env.otpExpiryMinutes * 60,
-    // Only surfaced outside production so the API is testable without a real mail provider.
-    ...(env.nodeEnv !== 'production' ? { devCode: code } : {}),
+    // Outside production, return the code too so the API stays testable - but not
+    // once real mail is configured, or anyone could sign in as any student.
+    ...(env.nodeEnv !== 'production' && !mailEnabled ? { devCode: code } : {}),
   };
 }
 

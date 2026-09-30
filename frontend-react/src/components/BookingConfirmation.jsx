@@ -25,9 +25,11 @@ function initialsOf(name) {
  *   reachable until then, same restriction MatchCard already applies.
  * @param {() => void} props.onContinue
  * @param {string} [props.continueLabel]
- * @param {() => void} [props.onLeave]  Shows "Can't make it? Leave group".
+ * @param {() => void} [props.onLeave]  Shows the cancel/leave link.
+ * @param {boolean} [props.solo]  Solo ride (Book a ride): nobody can join, so the
+ *   chat, the free-seats line and the group wording are dropped.
  */
-export default function BookingConfirmation({ group, driver = null, groupId, onContinue, continueLabel = 'Continue to payment', onLeave }) {
+export default function BookingConfirmation({ group, driver = null, groupId, onContinue, continueLabel = 'Continue to payment', onLeave, solo = false }) {
   const [busy, setBusy] = useState(false);
   const run = (fn) => async () => {
     if (busy || !fn) return;
@@ -94,8 +96,8 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
           {/* Your group — real matched members */}
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div className="input-label" style={{ marginBottom: 0 }}>Your group</div>
-              <button
+              <div className="input-label" style={{ marginBottom: 0 }}>{solo ? 'Your ride' : 'Your group'}</div>
+              {!solo && <button
                 onClick={() => setChatOpen(true)}
                 disabled={!groupId}
                 title={groupId ? 'Open group chat' : 'Join the group first to chat'}
@@ -114,7 +116,7 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
                   <path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H10l-5 4v-4H6.5A2.5 2.5 0 014 13.5v-7z" stroke="#211C26" strokeWidth="1.9" strokeLinejoin="round" />
                 </svg>
                 Group chat
-              </button>
+              </button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {members.map((m, i) => (
@@ -164,12 +166,12 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
               </div>
             )}
 
-            {seatsLeft === 0 && (
+            {!solo && seatsLeft === 0 && (
               <div style={{ marginTop: 14, fontSize: 12.5, color: '#0F6B52', fontWeight: 700 }}>
                 Group full ({members.length}/{members.length}) · 0 seats left
               </div>
             )}
-            {typeof seatsLeft === 'number' && seatsLeft > 0 && (
+            {!solo && typeof seatsLeft === 'number' && seatsLeft > 0 && (
               <div style={{ marginTop: 14, fontSize: 12.5, color: 'rgba(33,28,38,.55)', fontWeight: 600 }}>
                 {seatsLeft} seat{seatsLeft === 1 ? '' : 's'} still open — students heading your way can still join, which lowers everyone's share.
               </div>
@@ -224,15 +226,21 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
             <span style={{ font: '700 30px Familjen Grotesk,sans-serif', letterSpacing: '-.04em' }}>{formatFare(share)}</span>
           </div>
           <button className="btn-primary" style={{ marginTop: 22, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={run(onContinue)}>{continueLabel}</button>
-          {onLeave && (
+          {/* Under LEAVE_LOCK_MINUTES to pickup the backend refuses to let anyone out,
+              so show why instead of a button that can only fail. */}
+          {onLeave && (group?.leaveLockedReason ? (
+            <p style={{ margin: '12px 0 0', fontSize: 12.5, lineHeight: 1.5, color: '#A96A0C', textAlign: 'center', fontWeight: 600 }}>
+              🔒 {group.leaveLockedReason}
+            </p>
+          ) : (
             <button
               onClick={run(onLeave)}
               disabled={busy}
               style={{ marginTop: 12, width: '100%', border: 0, background: 'transparent', font: '700 13px Karla,sans-serif', color: '#B3261E', cursor: busy ? 'not-allowed' : 'pointer', textDecoration: 'underline' }}
             >
-              Can't make it? Leave group
+              {solo ? "Can't make it? Cancel this ride" : "Can't make it? Leave group"}
             </button>
-          )}
+          ))}
           <p style={{ margin: '14px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'rgba(33,28,38,.5)', textAlign: 'center' }}>
             Split by distance. Each rider pays only for the segments they travel.
           </p>

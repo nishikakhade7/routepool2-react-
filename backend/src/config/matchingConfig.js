@@ -31,4 +31,8 @@ const MIN_ROUTE_OVERLAP = 0.5;
 // route, so only identical routes score 1) vs pickup-time closeness.
 const SCORE_WEIGHTS = { similarity: 0.7, time: 0.3 };
 
-module.exports = { MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE, MIN_ROUTE_OVERLAP, SCORE_WEIGHTS };
+// Leaving is locked this many minutes before pickup: the others have planned
+// their auto and fare around you, so a last-minute exit strands them.
+const LEAVE_LOCK_MINUTES = 10;
+
+module.exports = { MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE, MIN_ROUTE_OVERLAP, SCORE_WEIGHTS, LEAVE_LOCK_MINUTES };

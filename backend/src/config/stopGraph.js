@@ -18,7 +18,9 @@
 const { createHash } = require('crypto');
 
 const STOPS = [
-  { name: 'SPIT Campus (Gate 2)', shortName: 'SPIT',       kmFromCampus: 0,   aliases: ['spit', 'campus', 'college', 'gate 2', 'sp it'] },
+  // geoQuery: what OpenStreetMap calls this place (used by scripts/buildStopEdges.js
+  // when the display name above isn't a place on the map).
+  { name: 'SPIT Campus (Gate 2)', shortName: 'SPIT',       kmFromCampus: 0,   aliases: ['spit', 'campus', 'college', 'gate 2', 'sp it'], geoQuery: 'Sardar Patel Institute of Technology' },
   { name: 'Azad Nagar',           shortName: 'AZAD NAGAR', kmFromCampus: 1.2, aliases: ['azad'] },
   { name: 'Andheri',              shortName: 'ANDHERI',    kmFromCampus: 2.5, aliases: ['andheri east', 'andheri west', 'andheri station'] },
   { name: 'Marol Naka',           shortName: 'MAROL',      kmFromCampus: 4.0, aliases: ['marol'] },
@@ -33,6 +35,17 @@ function stopId(name) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
+// Real coordinates + driving distances written by scripts/buildStopEdges.js
+// (OpenStreetMap). Missing file (nobody has run it yet) -> fall back to the
+// kmFromCampus placeholders and no coordinates.
+let realDistances = {};
+let realCoordinates = {};
+try {
+  const cached = require('./stopEdges.json');
+  realDistances = cached.distances || {};
+  realCoordinates = cached.coordinates || {};
+} catch { /* not generated yet */ }
+
 const STOP_NODES = STOPS.map((s) => ({
   id: stopId(s.name),
   name: s.name,
@@ -40,15 +53,17 @@ const STOP_NODES = STOPS.map((s) => ({
   area: s.kmFromCampus === 0 ? 'campus' : 'city',
   kmFromCampus: s.kmFromCampus,
   aliases: s.aliases || [],
-  lat: null,
-  lng: null,
+  lat: realCoordinates[s.name]?.lat ?? null,
+  lng: realCoordinates[s.name]?.lng ?? null,
 }));
+
 
 const STOP_EDGES = STOP_NODES.slice(1).map((n, i) => ({
   id: `edge-${i}`,
   nodeAId: STOP_NODES[i].id,
   nodeBId: n.id,
-  distanceKm: +Math.abs(n.kmFromCampus - STOP_NODES[i].kmFromCampus).toFixed(2),
+  distanceKm: realDistances[`${STOP_NODES[i].name}|${n.name}`]
+    ?? +Math.abs(n.kmFromCampus - STOP_NODES[i].kmFromCampus).toFixed(2),
 }));
 
-module.exports = { STOPS, STOP_NODES, STOP_EDGES };
+module.exports = { STOPS, STOP_NODES, STOP_EDGES, usingRealDistances: Object.keys(realDistances).length > 0 };

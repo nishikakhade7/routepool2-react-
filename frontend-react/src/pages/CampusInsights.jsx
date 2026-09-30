@@ -5,8 +5,6 @@ import { getCampusStats, getBusyRoutes } from '../api/client';
 
 // Bar chart heights for the last 12 hours (8am–8pm) — driven from busyRoutes count in real usage,
 // here we keep a visual shape but scale the peak bar to the actual busiest corridor count.
-const HOUR_LABELS = ['8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM', '8 PM'];
-const HOUR_SHAPE  = [0, 0, 0, 0, 0, 0, 0]; // Empty state until real data arrives
 
 export default function CampusInsights() {
   const [stats, setStats]         = useState(null);
@@ -23,6 +21,11 @@ export default function CampusInsights() {
       .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
     return () => { cancelled = true; };
   }, []);
+
+  // Real request counts per hour bucket, scaled so the busiest hour is the full bar.
+  const hourLabels = stats?.hourLabels ?? [];
+  const hourCounts = stats?.byHour ?? [];
+  const peak = Math.max(0, ...hourCounts);
 
   const statCards = [
     { label: 'Active Students',  value: loading ? '—' : stats?.totalUsers ?? '—',                         color: '#211C26' },
@@ -69,34 +72,43 @@ export default function CampusInsights() {
         {error && <div className="error-msg-red" style={{ marginBottom: 24 }}>{error}</div>}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr .8fr', gap: 32 }}>
-          {/* Hourly chart — shape is illustrative, peak bar labelled */}
+          {/* Hourly chart — real request counts from the backend, peak bar labelled */}
           <div className="card" style={{ padding: '28px 32px' }}>
             <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 24px', color: 'rgba(33,28,38,.55)' }}>
               Requests by Hour (Today)
             </h2>
             <div style={{ display: 'flex', alignItems: 'flex-end', height: 200, gap: 8, paddingBottom: 24, borderBottom: '1px solid rgba(33,28,38,.08)' }}>
-              {HOUR_SHAPE.map((val, i) => (
+              {hourCounts.map((count, i) => {
+                const val = peak ? Math.round((count / peak) * 100) : 0;
+                return (
                 <div
                   key={i}
+                  title={`${count} request${count === 1 ? '' : 's'} at ${hourLabels[i]}`}
                   style={{
-                    flex: 1, height: `${val}%`,
-                    background: val === 100 ? '#F2A230' : val > 60 ? 'rgba(242,162,48,.4)' : 'rgba(33,28,38,.1)',
+                    flex: 1, height: `${val}%`, minHeight: count ? 4 : 0,
+                    background: count === peak && peak > 0 ? '#F2A230' : val > 60 ? 'rgba(242,162,48,.4)' : 'rgba(33,28,38,.1)',
                     borderRadius: '4px 4px 0 0',
                     position: 'relative',
                     animation: `growBar .6s ${i * 0.06}s cubic-bezier(.2,.8,.2,1) both`,
                     transformOrigin: 'bottom',
                   }}
                 >
-                  {val === 100 && (
+                  {count === peak && peak > 0 && (
                     <div style={{ position: 'absolute', top: -22, left: '50%', transform: 'translateX(-50%)', font: '700 11px Karla,sans-serif', color: '#A96A0C', whiteSpace: 'nowrap' }}>
-                      Peak 🔥
+                      Peak 🔥 {count}
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
+            {peak === 0 && !loading && (
+              <div style={{ textAlign: 'center', marginTop: -110, font: '600 13px Karla,sans-serif', color: 'rgba(33,28,38,.4)' }}>
+                No ride requests yet today
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, font: '600 11px Karla,sans-serif', color: 'rgba(33,28,38,.45)' }}>
-              {HOUR_LABELS.map(l => <span key={l}>{l}</span>)}
+              {hourLabels.map(l => <span key={l}>{l}</span>)}
             </div>
           </div>
 

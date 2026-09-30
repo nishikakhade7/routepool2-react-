@@ -10,6 +10,10 @@ const listAvailable = asyncHandler(async (req, res) => {
   res.json({ groups: await groupsService.listAvailable(req.user.id) });
 });
 
+const bookSolo = asyncHandler(async (req, res) => {
+  res.status(201).json(await groupsService.bookSolo(req.user.id, req.body));
+});
+
 const listMine = asyncHandler(async (req, res) => {
   res.json({ groups: await groupsService.listMine(req.user.id) });
 });
@@ -40,4 +44,4 @@ const postChat = asyncHandler(async (req, res) => {
   res.status(201).json(message);
 });
 
-module.exports = { join, listAvailable, listMine, joinById, getGroup, leave, getDriver, getChat, postChat };
+module.exports = { join, bookSolo, listAvailable, listMine, joinById, getGroup, leave, getDriver, getChat, postChat };

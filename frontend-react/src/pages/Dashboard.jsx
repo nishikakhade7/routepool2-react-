@@ -4,7 +4,7 @@ import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import FareBreakup from '../components/FareBreakup';
-import { getDashboardStats, getBusyRoutes, getAvailableGroups } from '../api/client';
+import { getDashboardStats, getBusyRoutes, getAvailableGroups, joinGroupById } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 function fmt(isoStr) {
@@ -41,13 +41,20 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  // Join = the Book page's flow for this group: search its route/time (same
-  // endpoints and rules), then straight to "Confirm your booking".
-  function openInBook(g) {
-    const t = new Date(g.pickupTime);
-    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-    const q = new URLSearchParams({ group: g.id, pickup: g.pickupName, drop: g.dropName, time: hhmm });
-    navigate(`/book?${q}`);
+  // Join this group directly (Book a ride is solo-only), then show the
+  // confirmation and its chat on the Joined groups tab.
+  const [joiningId, setJoiningId] = useState(null);
+  async function openInBook(g) {
+    setJoiningId(g.id);
+    setCardErrors((prev) => ({ ...prev, available: null }));
+    try {
+      const joined = await joinGroupById(g.id);
+      navigate(`/groups?joined=${joined.id}`);
+    } catch (e) {
+      setCardErrors((prev) => ({ ...prev, available: e.message }));
+    } finally {
+      setJoiningId(null);
+    }
   }
 
   // The one-active-group rule from the backend (same message as a refused join).
@@ -163,7 +170,10 @@ export default function Dashboard() {
               ) : available.map((g, i) => (
                 <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px', borderBottom: i < available.length - 1 ? '1px solid rgba(33,28,38,.06)' : 'none' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>{g.pickupName} → {g.dropName}</div>
+                    <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>
+                      {g.pickupName} → {g.dropName}
+                      {g.isMine && <span style={{ marginLeft: 8, font: '700 10.5px Karla,sans-serif', letterSpacing: '.1em', textTransform: 'uppercase', color: '#0F6B52', background: '#E4F2EC', borderRadius: 7, padding: '3px 7px' }}>You're in</span>}
+                    </div>
                     <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 600 }}>
                       {fmt(g.pickupTime)} · {g.members.map(m => m.name).join(', ')} · {g.seatsLeft} seat{g.seatsLeft === 1 ? '' : 's'} left
                     </div>
@@ -172,11 +182,11 @@ export default function Dashboard() {
                   <button
                     className="btn-primary"
                     style={{ width: 'auto', padding: '10px 18px', opacity: g.joinBlockedReason ? 0.4 : 1, cursor: g.joinBlockedReason ? 'not-allowed' : 'pointer' }}
-                    disabled={!!g.joinBlockedReason}
-                    title={g.joinBlockedReason || 'Review and confirm on the booking screen'}
-                    onClick={() => openInBook(g)}
+                    disabled={!!g.joinBlockedReason || joiningId === g.id}
+                    title={g.joinBlockedReason || (g.isMine ? 'Open this group and its chat' : 'Join this group and open its chat')}
+                    onClick={() => (g.isMine ? navigate(`/groups?joined=${g.id}`) : openInBook(g))}
                   >
-                    Join
+                    {joiningId === g.id ? 'Joining…' : g.isMine ? 'Open' : 'Join'}
                   </button>
                 </div>
               ))}

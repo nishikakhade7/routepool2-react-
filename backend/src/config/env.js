@@ -16,6 +16,13 @@ module.exports = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   otpExpiryMinutes: parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10),
   allowedEmailDomain: process.env.ALLOWED_EMAIL_DOMAIN || 'spit.ac.in',
+  // Gmail account that sends the OTP. SMTP_PASS is a Google App Password, not
+  // the account password. Leave unset to just log the code instead of mailing it.
+  smtp: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.MAIL_FROM || `RoutePool <${process.env.SMTP_USER}>`,
+  },
   // Auto-rickshaw meter tariff: flat `baseFare` for the first `baseKm`, then
   // `perKmRate` per km beyond it, with `surgeMultiplier` added on top for the driver.
   autoTariff: {
