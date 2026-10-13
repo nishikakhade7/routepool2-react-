@@ -1,12 +1,40 @@
 const nodeModel = require('../../models/node.model');
 const routeEdgeModel = require('../../models/routeEdge.model');
 const rideRequestModel = require('../../models/rideRequest.model');
+const groupModel = require('../../models/group.model');
+const groupMemberModel = require('../../models/groupMember.model');
 const { dijkstra } = require('../../utils/dijkstra');
 const { autoFareForDistance } = require('../../utils/fare');
 const { matchStop } = require('../../utils/stopMatcher');
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
 const { MATCH_BUFFER_MINUTES } = require('../../config/matchingConfig');
+
+// The "already in a group for this ride" refusal, describing what the student is
+// actually in: joined but unpaid, paid, or a public-transport group. Message only -
+// the 10-minute same-ride rule itself is unchanged. details let the page link to it.
+async function alreadyInGroupError(duplicate, userId) {
+  const g = duplicate.group_id && await groupModel.findById(duplicate.group_id);
+  if (!g) return ApiError.conflict('You already have a ride for this route and time');
+  const me = (await groupMemberModel.listByGroup(g.id)).find((m) => m.user_id === userId);
+  const [pickup, drop] = await Promise.all([nodeModel.findById(duplicate.pickup_node_id), nodeModel.findById(duplicate.drop_node_id)]);
+  const time = new Date(new Date(g.departure_time).getTime() + MATCH_BUFFER_MINUTES * 60000)
+    .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+  const ride = `${time} ${pickup?.name} → ${drop?.name}`;
+  const window = `(Pickup times within ${MATCH_BUFFER_MINUTES} minutes of it on the same route count as the same ride.)`;
+  const paid = Boolean(me?.paid_at);
+  const kind = g.kind || 'auto';
+  let message;
+  if (kind === 'transit') {
+    message = `You're already in the ${ride} public-transport group — open it instead of starting a new search. ${window}`;
+  } else if (paid) {
+    const driver = g.driver ? ` with ${g.driver.name} (${g.driver.plateNumber})` : '';
+    message = `You already paid for the ${ride} group${driver} — open it to see details. ${window}`;
+  } else {
+    message = `You're already in the ${ride} group — finish booking it instead of starting a new search. ${window}`;
+  }
+  return new ApiError(409, message, { code: 'ALREADY_IN_GROUP', groupId: g.id, paid, kind });
+}
 
 async function listNodes() {
   return nodeModel.listAll();
@@ -53,7 +81,7 @@ async function createRequest(userId, { pickupNodeId, dropNodeId, pickupText, dro
   const duplicate = (await rideRequestModel.findActiveByUser(userId)).find((r) =>
     r.pickup_node_id === pickupNodeId && r.drop_node_id === dropNodeId &&
     Math.abs(new Date(r.window_start).getTime() + bufferMs - pickupMs) <= bufferMs);
-  if (duplicate?.status === 'matched') throw ApiError.conflict('You already have a ride booked for this route and time');
+  if (duplicate?.status === 'matched') throw await alreadyInGroupError(duplicate, userId);
 
   const windowStart = new Date(pickupMs - bufferMs).toISOString();
   const windowEnd   = new Date(pickupMs + bufferMs).toISOString();

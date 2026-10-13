@@ -15,4 +15,17 @@ const verifyOtpSchema = z.object({
   params: z.any(),
 });
 
-module.exports = { sendOtpSchema, verifyOtpSchema };
+const { GENDERS, DRIVER_PREFERENCES } = require('../../utils/genderRules');
+
+// Every field optional: gender null = prefer not to say.
+const preferencesSchema = z.object({
+  body: z.object({
+    gender: z.enum(GENDERS).nullable().optional(),
+    womenOnlyGroups: z.boolean().optional(),
+    driverPreference: z.enum(DRIVER_PREFERENCES).optional(),
+  }),
+  query: z.any(),
+  params: z.any(),
+});
+
+module.exports = { sendOtpSchema, verifyOtpSchema, preferencesSchema };

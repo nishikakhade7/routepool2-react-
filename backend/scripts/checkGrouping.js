@@ -1,5 +1,8 @@
 // End-to-end check of grouping against a running mock-DB backend:
 //   node scripts/checkGrouping.js [http://localhost:4000]
+// The backend must be started with EXPOSE_DEV_OTP=true so this script can read
+// the OTP from the API (the app itself never shows it), e.g. in PowerShell:
+//   $env:EXPOSE_DEV_OTP='true'; npm run dev
 // Uses the stops in src/config/stopGraph.js and the rules in src/config/matchingConfig.js
 // (10 min window, 3 riders per auto, >= 50% of the shorter route shared).
 const assert = require('assert');
@@ -19,6 +22,7 @@ async function call(method, path, body, token) {
 async function login(name) {
   const email = `${name}.${run}@spit.ac.in`;
   const { data: { devCode } } = await call('POST', '/auth/send-otp', { email });
+  if (!devCode) throw new Error('No OTP in the API response - start the backend with EXPOSE_DEV_OTP=true (see top of this file)');
   return (await call('POST', '/auth/verify-otp', { email, code: devCode })).data.token;
 }
 

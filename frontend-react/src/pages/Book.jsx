@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import VisionBadge from '../components/VisionBadge';
 import RouteVisual from '../components/RouteVisual';
@@ -7,8 +7,9 @@ import BookingConfirmation from '../components/BookingConfirmation';
 import CustomTimePicker from '../components/CustomTimePicker';
 import PaymentMethodSelect from '../components/PaymentMethodSelect';
 import PaymentSuccess from '../components/PaymentSuccess';
-import { joinGroup, getGroup, leaveGroup, getMatches, getAssignedDriver, boardRide, getMe } from '../api/client';
+import { joinGroup, getGroup, leaveGroup, getMatchesDetailed, getAssignedDriver, setDriverPreference, payForGroup, boardRide, getMe } from '../api/client';
 import MatchCard from '../components/MatchCard';
+import WomenOnlyChoice from '../components/WomenOnlyChoice';
 import { runMatchingFlow } from '../api/matching';
 import { formatRating, formatEta } from '../utils/formatDriver';
 
@@ -18,6 +19,8 @@ import { formatRating, formatEta } from '../utils/formatDriver';
 // sit narrower and centered.
 const STAGE_WIDTH = {
   where: 1180,
+  resuming: 760,
+  resumeFailed: 760,
   searching: 760,
   grouping: 760,
   results: 1180,
@@ -55,7 +58,14 @@ export default function Book() {
   // run the normal flow, and go straight to confirming that group.
   const [searchParams, setSearchParams] = useSearchParams();
   const preselectRef = useRef(searchParams.get('group'));
-  const [stage, setStage] = useState(() => (searchParams.get('group') ? 'searching' : 'where'));
+  // /book?resume=<groupId> (Dashboard / Joined groups "Resume booking"): reopen an
+  // unpaid booking on its confirm screen instead of starting a new search.
+  // State (not a ref) so a button on this same page can start a resume too.
+  const [resumeId, setResumeId] = useState(() => searchParams.get('resume'));
+  // Why a booking couldn't be reopened (shown on its own screen, never a spinner).
+  const [resumeFailure, setResumeFailure] = useState(null);
+  const navigate = useNavigate();
+  const [stage, setStage] = useState(() => (searchParams.get('resume') ? 'resuming' : searchParams.get('group') ? 'searching' : 'where'));
 
   // Form data
   const [pickupText, setPickupText] = useState(() => searchParams.get('pickup') || '');
@@ -70,6 +80,13 @@ export default function Book() {
   const [groupId, setGroupId] = useState(null);
   const [group, setGroup] = useState(null);
   const [driver, setDriver] = useState(null);
+  // No driver matches the group's gender preference: { message, canWaive }.
+  const [driverIssue, setDriverIssue] = useState(null);
+  const [allowingAny, setAllowingAny] = useState(false);
+  // Women-only preference: groups hidden only by it, and whether the student
+  // chose "show other groups for this ride".
+  const [hiddenByPref, setHiddenByPref] = useState(0);
+  const [relaxPref, setRelaxPref] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [riderCode, setRiderCode] = useState(null);
   const [boarding, setBoarding] = useState(false);
@@ -93,6 +110,9 @@ export default function Book() {
   }
 
   const [bookError, setBookError] = useState(null);
+  // When the search was refused because the student is already in a group for this
+  // ride: { groupId, paid, kind } so the error can link straight to that group.
+  const [existingRide, setExistingRide] = useState(null);
   const [notice, setNotice] = useState(null);
   const [startingNew, setStartingNew] = useState(false);
 
@@ -102,8 +122,49 @@ export default function Book() {
   // Dashboard "Join" lands here as /book?group=: the prefilled search runs
   // straight away; drop the params so a reload doesn't repeat it.
   useEffect(() => {
-    if (searchParams.get('group')) setSearchParams({}, { replace: true });
+    if (searchParams.get('group') || searchParams.get('resume')) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
+
+  // Resume an unpaid booking: same group, members, fare split, and the driver if one
+  // is already assigned. Everything comes from the server, so it survives navigation.
+  // The id is deliberately NOT cleared here: React StrictMode (dev) runs this effect
+  // twice - run, cleanup, run - and the first run's result is discarded by its
+  // cleanup. Clearing the id on the first run left the second with nothing to do,
+  // stuck on "Reopening your booking…". Every exit below sets a final stage.
+  useEffect(() => {
+    const id = resumeId;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const g = await getGroup(id);
+        // Only an unpaid, upcoming auto ride can be resumed - say why otherwise.
+        let reason = null;
+        if (g.youPaid) reason = { title: 'This booking is already paid', text: 'Nothing left to do — you can find it in Joined groups.' };
+        else if (g.status === 'cancelled') reason = { title: 'This ride was cancelled', text: 'Everyone left the group, so there is nothing to pay for.' };
+        else if (g.kind === 'transit') reason = { title: 'Nothing to pay', text: "Public-transport groups don't book an auto, so there is no payment." };
+        else if (!g.paymentPending) reason = { title: 'This ride has already left', text: "Its pickup time has passed, so the booking can't be resumed." };
+        if (reason) {
+          if (!cancelled) { setResumeFailure(reason); setStage('resumeFailed'); }
+          return;
+        }
+        const d = g.driverAssigned ? await getAssignedDriver(id) : null;
+        if (cancelled) return;
+        setGroupId(id);
+        setGroup(g);
+        setDriver(d);
+        setStage('confirm');
+      } catch (e) {
+        if (cancelled) return;
+        // 403: no longer a member (left the group); anything else: network/timeout.
+        setResumeFailure(e.status === 403
+          ? { title: "This booking doesn't exist any more", text: 'You may have left the group, or it was removed.' }
+          : { title: "Couldn't reopen your booking", text: e.message });
+        setStage('resumeFailed');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [resumeId]);
 
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -134,17 +195,19 @@ export default function Book() {
           d.setHours(hh, mm, 0, 0);
           pickupISO = d.toISOString();
         }
-        const { request, matches: found } = await runMatchingFlow({ pickupText, dropText, pickupTime: pickupISO, onStageChange: setStage });
+        setRelaxPref(false);
+        const { request, matches: found, hiddenByPreference = 0 } = await runMatchingFlow({ pickupText, dropText, pickupTime: pickupISO, onStageChange: setStage });
         if (!isMountedRef.current) return;
         setMyRequest(request);
         setMatches(found);
+        setHiddenByPref(hiddenByPreference);
         const wantedId = preselectRef.current;
         preselectRef.current = null;
         if (wantedId) {
           const wanted = found.find((g) => g.id === wantedId);
           if (wanted) {
             try {
-              await handleSelectGroup(wanted, request);
+              await handleSelectGroup(wanted, request, { relax: false });
               return;
             } catch (e) {
               setBookError(e.message);
@@ -156,22 +219,25 @@ export default function Book() {
         // Nobody to pool with yet: open the group anyway, so the next student
         // booking a nearby drop within the matching window pools into THIS group
         // instead of starting a second one for the same trip.
-        if (found.length === 0) {
-          try {
-            await handleStartNewGroup(request);
-            return;
-          } catch (e) {
-            setBookError(e.message);
-          }
+        // Not when the student's women-only preference hid groups: then they get
+        // to choose (start a women-only group, or see the others this once).
+        // If starting it fails (e.g. already boarded another ride), fall through to
+        // the results screen, which shows the reason - never stay on the spinner.
+        if (found.length === 0 && hiddenByPreference === 0) {
+          if (await handleStartNewGroup(request, { relax: false })) return;
         }
-        setStage('results');
+        if (isMountedRef.current) setStage('results');
       } catch (e) {
         console.error('[Book] runMatchingFlow failed:', e);
         if (!isMountedRef.current) return;
         setBookError(e.message || 'Something went wrong while finding a match. Please try again.');
+        setExistingRide(e.details?.code === 'ALREADY_IN_GROUP' ? e.details : null);
         setStage('where');
       }
     })();
+    // handleSelectGroup/handleStartNewGroup get every value they need as arguments
+    // here (a fresh search always starts with relax: false), so they're not deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, pickupText, dropText, pickupTime]);
 
   // While the user is looking at their group, keep it in sync with the backend
@@ -190,43 +256,57 @@ export default function Book() {
     setGroupId(id);
     setGroup(g);
     setDriver(null);
+    setDriverIssue(null);
     setBookError(null);
     setStage('confirm');
   }
 
   // d. User picks one of the listed groups -> join it, then confirm screen.
-  async function handleSelectGroup(g, req = myRequest) {
+  async function handleSelectGroup(g, req = myRequest, { relax = relaxPref } = {}) {
     try {
-      const joined = await joinGroup(req.id, g.memberRideRequestIds);
+      const joined = await joinGroup(req.id, g.memberRideRequestIds, 'auto', { relaxPreference: relax });
       await openGroup(joined.id);
     } catch (e) {
       // Group may have filled up or changed since the list loaded - refresh it.
-      getMatches(req.id).then(setMatches).catch(() => {});
+      getMatchesDetailed(req.id, 'auto', { relaxPreference: relax }).then((r) => setMatches(r.groups)).catch(() => {});
       throw e;
     }
   }
 
   // No suitable group: explicitly start a new one with this rider as the first member.
-  async function handleStartNewGroup(req = myRequest) {
+  // relax: start a mixed group even though the student asked for women-only groups.
+  // Returns true once the group is open on the confirm screen; on failure the
+  // reason is in bookError and the caller must move off the loading screen.
+  async function handleStartNewGroup(req = myRequest, { relax = relaxPref } = {}) {
     setStartingNew(true);
     setBookError(null);
     try {
-      const started = await joinGroup(req.id, [req.id]);
+      const started = await joinGroup(req.id, [req.id], 'auto', { relaxPreference: relax });
       await openGroup(started.id);
+      return true;
     } catch (e) {
       setBookError(e.message);
+      return false;
     } finally {
       if (isMountedRef.current) setStartingNew(false);
     }
   }
 
-  async function refreshMatches() {
+  async function refreshMatches(relax = relaxPref) {
     setBookError(null);
     try {
-      setMatches(await getMatches(myRequest.id));
+      const r = await getMatchesDetailed(myRequest.id, 'auto', { relaxPreference: relax });
+      setMatches(r.groups);
+      setHiddenByPref(r.hiddenByPreference);
     } catch (e) {
       setBookError(e.message);
     }
+  }
+
+  // "Show other groups for this ride": this search only; the profile setting stays.
+  function showOtherGroups() {
+    setRelaxPref(true);
+    refreshMatches(true);
   }
 
   // e. "Can't make it? Leave group" -> removed from the group, back to search.
@@ -249,13 +329,34 @@ export default function Book() {
 
   // f. Confirm -> driver for this group (decided once by the backend, same for every member).
   async function handleConfirmBooking() {
+    setBookError(null);
     try {
       const d = await getAssignedDriver(groupId);
       if (!isMountedRef.current) return;
+      setDriverIssue(null);
       setDriver(d);
       setStage('driverAssigned');
     } catch (e) {
+      // No driver matches the group's gender preference (or none free at all):
+      // explain and let the student choose - never a silent fallback.
+      if (['NO_MATCHING_DRIVER', 'NO_DRIVER_AVAILABLE'].includes(e.details?.code)) {
+        setDriverIssue({ message: e.message, canWaive: Boolean(e.details.canWaive) });
+      } else {
+        setBookError(e.message);
+      }
+    }
+  }
+
+  // "Allow any driver" for this ride - waives only this student's own preference.
+  async function handleAllowAnyDriver() {
+    setAllowingAny(true);
+    try {
+      await setDriverPreference(groupId, { allowAnyDriver: true });
+      await handleConfirmBooking();
+    } catch (e) {
       setBookError(e.message);
+    } finally {
+      if (isMountedRef.current) setAllowingAny(false);
     }
   }
 
@@ -331,6 +432,23 @@ export default function Book() {
                 </div>
 
                 {bookError && <div className="error-msg-red">{bookError}</div>}
+                {bookError && existingRide && (
+                  <button
+                    className="btn-ghost"
+                    style={{ width: 'auto', padding: '10px 18px', marginBottom: 16 }}
+                    onClick={() => {
+                      if (existingRide.kind === 'auto' && !existingRide.paid) {
+                        setBookError(null);
+                        setStage('resuming');
+                        setResumeId(existingRide.groupId); // same page: reopen it here
+                      } else {
+                        navigate(`/groups?view=${existingRide.groupId}`);
+                      }
+                    }}
+                  >
+                    {existingRide.kind === 'auto' && !existingRide.paid ? 'Finish booking it' : 'Open it'}
+                  </button>
+                )}
 
                 {notice && <div style={{ marginBottom: 12, fontWeight: 600, color: 'rgba(33,28,38,.7)' }}>{notice}</div>}
 
@@ -362,6 +480,25 @@ export default function Book() {
                     : "Enter both pickup and drop-off to preview your route"}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {stage === 'resuming' && (
+          <div className="loading-center animate-rise" style={{ minHeight: '60vh' }}>
+            <span className="spinner" />
+            <div style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.02em' }}>Reopening your booking…</div>
+          </div>
+        )}
+
+        {stage === 'resumeFailed' && resumeFailure && (
+          <div className="card animate-rise" style={{ textAlign: 'center', padding: 40 }}>
+            <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 8 }}>{resumeFailure.title}</div>
+            <p style={{ margin: '0 0 24px', fontSize: 15, color: 'rgba(33,28,38,.6)' }}>{resumeFailure.text}</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button className="btn-primary" style={{ width: 'auto', padding: '12px 22px' }} onClick={() => navigate('/dashboard')}>Back to Dashboard</button>
+              <button className="btn-ghost" style={{ width: 'auto', padding: '12px 22px' }} onClick={() => navigate('/groups')}>Joined groups</button>
+              <button className="btn-ghost" style={{ width: 'auto', padding: '12px 22px' }} onClick={() => { setResumeFailure(null); setStage('where'); }}>Book a new ride</button>
             </div>
           </div>
         )}
@@ -411,7 +548,20 @@ export default function Book() {
 
             {bookError && <div className="error-msg-red" style={{ marginBottom: 16 }}>{bookError}</div>}
 
-            {matches.length > 0 ? (
+            {hiddenByPref > 0 && !relaxPref && matches.length > 0 && (
+              <WomenOnlyChoice variant="note" hiddenCount={hiddenByPref} onShowOthers={showOtherGroups} />
+            )}
+
+            {matches.length === 0 && hiddenByPref > 0 && !relaxPref ? (
+              <WomenOnlyChoice
+                variant="empty"
+                hiddenCount={hiddenByPref}
+                aroundTime={fmtTime(myRequest.pickupTime)}
+                starting={startingNew}
+                onStart={() => handleStartNewGroup(myRequest, { relax: false })}
+                onShowOthers={showOtherGroups}
+              />
+            ) : matches.length > 0 ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
                 {matches.map((m, i) => (
                   <MatchCard key={m.id || m.groupKey} group={m} index={i} myRideRequestId={myRequest.id} onSelect={handleSelectGroup} />
@@ -427,7 +577,7 @@ export default function Book() {
                   Start one and you'll be its first rider — students who search this route within the time window will see it and can join.
                   Solo fare for now: ₹{Number(myRequest.soloFare).toFixed(0)}, and it drops as others join.
                 </p>
-                <button className="btn-accent" style={{ width: 'auto', padding: '14px 24px', opacity: startingNew ? 0.7 : 1 }} disabled={startingNew} onClick={handleStartNewGroup}>
+                <button className="btn-accent" style={{ width: 'auto', padding: '14px 24px', opacity: startingNew ? 0.7 : 1 }} disabled={startingNew} onClick={() => handleStartNewGroup()}>
                   {startingNew ? 'Starting…' : 'Start a new group'}
                 </button>
               </div>
@@ -435,9 +585,9 @@ export default function Book() {
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
               <button className="btn-ghost" style={{ width: 'auto' }} onClick={() => setStage('where')}>Change search</button>
-              <button className="btn-ghost" style={{ width: 'auto' }} onClick={refreshMatches}>Refresh list</button>
+              <button className="btn-ghost" style={{ width: 'auto' }} onClick={() => refreshMatches()}>Refresh list</button>
               {matches.length > 0 && (
-                <button className="btn-ghost" style={{ width: 'auto' }} disabled={startingNew} onClick={handleStartNewGroup}>
+                <button className="btn-ghost" style={{ width: 'auto' }} disabled={startingNew} onClick={() => handleStartNewGroup()}>
                   None of these work? Start a new group
                 </button>
               )}
@@ -473,6 +623,9 @@ export default function Book() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                     <span style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>{driver.name}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#F4EEE3', font: '700 12px Karla,sans-serif', padding: '5px 9px', borderRadius: 8 }}>★ {formatRating(driver.rating)}</span>
+                    {driver.femaleDriverAsRequested && (
+                      <span style={{ background: '#F7E3F0', color: '#8A2B6B', font: '700 12px Karla,sans-serif', padding: '5px 9px', borderRadius: 8 }}>Female driver, as requested</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 13.5, color: 'rgba(33,28,38,.55)', fontWeight: 600, marginTop: 4 }}>{driver.vehicle}</div>
                 </div>
@@ -525,16 +678,33 @@ export default function Book() {
         {stage === 'confirm' && group && (
           <>
             {bookError && <div className="error-msg-red" style={{ marginBottom: 16 }}>{bookError}</div>}
+            {driverIssue && (
+              <div className="card" style={{ marginBottom: 16, border: '1.5px solid #F2A230', background: '#FFF8EC' }}>
+                <div style={{ font: '700 17px Familjen Grotesk,sans-serif', marginBottom: 12 }}>{driverIssue.message}</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button className="btn-ghost" style={{ width: 'auto', padding: '10px 18px' }} disabled={allowingAny} onClick={handleConfirmBooking}>
+                    Wait — try again
+                  </button>
+                  {driverIssue.canWaive && (
+                    <button className="btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={allowingAny} onClick={handleAllowAnyDriver}>
+                      {allowingAny ? 'Assigning…' : 'Allow any driver for this ride'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <BookingConfirmation
               group={group}
               groupId={groupId}
-              continueLabel="Confirm booking"
+              driver={driver}
+              continueLabel={driver ? 'Continue' : 'Confirm booking'}
               onContinue={handleConfirmBooking}
               onLeave={handleLeaveGroup}
             />
           </>
         )}
 
+        {stage === 'payment' && bookError && <div className="error-msg-red" style={{ marginBottom: 16 }}>{bookError}</div>}
         {stage === 'payment' && (
           <PaymentMethodSelect
             amount={youShare}
@@ -542,7 +712,16 @@ export default function Book() {
             vehicleName={driver?.vehicle}
             pickupText={pickupName}
             dropText={dropName}
-            onConfirm={(method) => { setPaymentMethod(method); setStage('success'); }}
+            onConfirm={async (method) => {
+              // Record the payment on the server, so this ride no longer shows as pending.
+              try {
+                await payForGroup(groupId, method.id);
+                setPaymentMethod(method);
+                setStage('success');
+              } catch (e) {
+                setBookError(e.message);
+              }
+            }}
           />
         )}
 

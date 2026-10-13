@@ -4,8 +4,9 @@ import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import MatchCard from '../components/MatchCard';
+import WomenOnlyChoice from '../components/WomenOnlyChoice';
 import CustomTimePicker from '../components/CustomTimePicker';
-import { getNodes, joinGroup } from '../api/client';
+import { getNodes, joinGroup, getMatchesDetailed } from '../api/client';
 import { runMatchingFlow } from '../api/matching';
 
 export default function FormGroup() {
@@ -26,11 +27,34 @@ export default function FormGroup() {
   const [matches, setMatches] = useState([]);
   const [groupStarted, setGroupStarted] = useState(false);
   const [startError, setStartError] = useState(null);
+  // Women-only preference: groups hidden only by it, and whether the student
+  // chose "show other groups for this ride" (same as Book a ride).
+  const [hiddenByPref, setHiddenByPref] = useState(0);
+  const [relaxPref, setRelaxPref] = useState(false);
+  const [starting, setStarting] = useState(false);
 
-  async function handleStartGroup() {
+  // relax: start a mixed group even though the student asked for women-only groups.
+  async function handleStartGroup({ relax = relaxPref } = {}) {
+    setStarting(true);
+    setStartError(null);
     try {
-      const started = await joinGroup(myRequestId, [myRequestId], 'transit');
+      const started = await joinGroup(myRequestId, [myRequestId], 'transit', { relaxPreference: relax });
       navigate(`/groups?joined=${started.id}`);
+    } catch (e) {
+      setStartError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // "Show other groups for this ride": this search only; the profile setting stays.
+  async function showOtherGroups() {
+    setStartError(null);
+    try {
+      const r = await getMatchesDetailed(myRequestId, 'transit', { relaxPreference: true });
+      setRelaxPref(true);
+      setMatches(r.groups);
+      setHiddenByPref(r.hiddenByPreference);
     } catch (e) {
       setStartError(e.message);
     }
@@ -65,7 +89,7 @@ export default function FormGroup() {
     const pickupISO = pickupDate.toISOString();
 
     try {
-      const { requestId, matches } = await runMatchingFlow({
+      const { requestId, matches, hiddenByPreference = 0 } = await runMatchingFlow({
         pickupText,
         dropText,
         pickupTime: pickupISO,
@@ -74,6 +98,8 @@ export default function FormGroup() {
       });
       setMyRequestId(requestId);
       setMatches(matches);
+      setHiddenByPref(hiddenByPreference);
+      setRelaxPref(false);
       setGroupStarted(false);
       setStartError(null);
       setStage('results');
@@ -206,20 +232,34 @@ export default function FormGroup() {
             </button>
           </div>
 
-          {matches.length === 0 ? (
+          {startError && hiddenByPref > 0 && <div className="error-msg-red" style={{ marginBottom: 16 }}>{startError}</div>}
+
+          {hiddenByPref > 0 && !relaxPref && matches.length > 0 && (
+            <WomenOnlyChoice variant="note" hiddenCount={hiddenByPref} onShowOthers={showOtherGroups} />
+          )}
+
+          {matches.length === 0 && hiddenByPref > 0 && !relaxPref ? (
+            <WomenOnlyChoice
+              variant="empty"
+              hiddenCount={hiddenByPref}
+              starting={starting}
+              onStart={() => handleStartGroup({ relax: false })}
+              onShowOthers={showOtherGroups}
+            />
+          ) : matches.length === 0 ? (
             <div className="card loading-center" style={{ padding: 80 }}>
               <div style={{ font: '700 18px Familjen Grotesk,sans-serif', marginBottom: 8, color: '#211C26' }}>
                 {groupStarted ? 'Group started!' : "No group on this route yet — you're the first"}
               </div>
               <div>{groupStarted ? 'Students requesting this route within 10 minutes of your time will join it.' : 'Start a group and others heading your way will join.'}</div>
-              {!groupStarted && myRequestId && <button className="btn-accent" style={{ marginTop: 24 }} onClick={handleStartGroup}>Start a group</button>}
+              {!groupStarted && myRequestId && <button className="btn-accent" style={{ marginTop: 24 }} disabled={starting} onClick={() => handleStartGroup()}>{starting ? 'Starting…' : 'Start a group'}</button>}
               {startError && <div className="error-msg-red" style={{ marginTop: 12 }}>{startError}</div>}
               <button className="btn-ghost" style={{ marginTop: 24 }} onClick={() => setStage('form')}>Back to form</button>
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 32 }}>
               {matches.map((m, i) => (
-                <MatchCard key={m.groupKey} group={m} index={i} myRideRequestId={myRequestId} kind="transit" />
+                <MatchCard key={m.groupKey} group={m} index={i} myRideRequestId={myRequestId} kind="transit" relaxPreference={relaxPref} />
               ))}
             </div>
           )}

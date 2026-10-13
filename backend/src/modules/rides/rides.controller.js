@@ -13,8 +13,11 @@ const createRequest = asyncHandler(async (req, res) => {
 });
 
 const getMatches = asyncHandler(async (req, res) => {
-  const groups = await matchingService.findMatches(req.query.rideRequestId, req.user.id, req.query.kind || 'auto');
-  res.json({ groups });
+  const { groups, hiddenByPreference } = await matchingService.findMatches(
+    req.query.rideRequestId, req.user.id, req.query.kind || 'auto',
+    { relaxPreference: req.query.relaxPreference === 'true' },
+  );
+  res.json({ groups, hiddenByPreference });
 });
 
 module.exports = { getNodes, createRequest, getMatches };

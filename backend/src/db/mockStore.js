@@ -140,6 +140,12 @@ const userModel = {
     if (user) user.is_verified = true;
     return user;
   },
+  // Optional gender + pooling preferences (see utils/genderRules.js).
+  async updatePreferences(id, { gender, womenOnlyGroups, driverPreference }) {
+    const user = db.users.find(u => u.id === id);
+    if (user) Object.assign(user, { gender, women_only_groups: womenOnlyGroups, driver_preference: driverPreference });
+    return user;
+  },
 };
 
 // ── Node model mock ───────────────────────────────────────────────────────────
@@ -269,8 +275,8 @@ const rideRequestModel = {
 // ── Group model mock ──────────────────────────────────────────────────────────
 
 const groupModel = {
-  async create({ pickupNodeId, departureTime, totalFare, kind = 'auto' }, _client) {
-    const g = { id: uuidv4(), pickup_node_id: pickupNodeId, departure_time: new Date(departureTime), total_fare: totalFare, status: 'forming', created_at: new Date() , kind, meeting_point: null, transit_mode: null };
+  async create({ pickupNodeId, departureTime, totalFare, kind = 'auto', womenOnly = false }, _client) {
+    const g = { id: uuidv4(), pickup_node_id: pickupNodeId, departure_time: new Date(departureTime), total_fare: totalFare, status: 'forming', created_at: new Date() , kind, meeting_point: null, transit_mode: null, women_only: womenOnly };
     db.groups.push(g);
     return g;
   },
@@ -296,6 +302,10 @@ const groupModel = {
     if (!g) return null;
     if (!g.driver) g.driver = driver;
     return g.driver;
+  },
+  // Groups that have a driver assigned (to tell which drivers are busy).
+  async listWithDrivers() {
+    return db.groups.filter(g => g.driver);
   },
   async updateTotalFare(id, totalFare, _client) {
     const g = db.groups.find(g => g.id === id);
@@ -326,8 +336,14 @@ const groupMemberModel = {
     if (m) m.boarded_at = new Date();
     return m;
   },
-  async boardedMembershipOf(userId) {
-    return db.groupMembers.find(m => m.user_id === userId && m.boarded_at) || null;
+  // Rider paid their share (no real gateway - this records that the payment step was completed).
+  async markPaid(groupId, userId, method) {
+    const m = db.groupMembers.find(m => m.group_id === groupId && m.user_id === userId);
+    if (m) { m.paid_at = new Date(); m.payment_method = method; }
+    return m;
+  },
+  async boardedMembershipsOf(userId) {
+    return db.groupMembers.filter(m => m.user_id === userId && m.boarded_at);
   },
   async add({ groupId, userId, rideRequestId, dropNodeId, fareShare }, _client) {
     // upsert on (group_id, user_id)
@@ -370,6 +386,12 @@ const groupMemberModel = {
   },
   async isMember(groupId, userId) {
     return db.groupMembers.some(m => m.group_id === groupId && m.user_id === userId);
+  },
+  // This member waived their "female driver" preference for this group.
+  async setAllowAnyDriver(groupId, userId, allow) {
+    const m = db.groupMembers.find(m => m.group_id === groupId && m.user_id === userId);
+    if (m) m.allow_any_driver = allow;
+    return m;
   },
 };
 

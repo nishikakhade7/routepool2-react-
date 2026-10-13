@@ -25,14 +25,34 @@ function getToken() {
 // The dev backend restarts on every file save (nodemon), and calls in that
 // half-second come back as a proxy 502/504 or a dropped connection. One retry
 // rides over the restart instead of showing "Request failed" all over the page.
+// Any call that gets no answer within this long fails with a clear message,
+// so no screen can spin forever on a backend that never responds.
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: ctl.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw Object.assign(new Error('Something went wrong — the server took too long to respond. Please try again.'), { timedOut: true });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchWithRetry(url, options) {
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(url, options);
+      const res = await fetchWithTimeout(url, options);
       if (res.status !== 502 && res.status !== 504) return res;
       if (attempt === 1) return res;
     } catch (err) {
-      if (attempt === 1) throw err; // still unreachable: let the caller show it
+      // A timeout already waited long enough; a second try would double it.
+      if (err.timedOut || attempt === 1) throw err; // still unreachable: let the caller show it
     }
     await new Promise((r) => setTimeout(r, 1200));
   }
@@ -65,7 +85,9 @@ async function request(method, path, body) {
 
   if (!res.ok) {
     const msg = data?.error?.message || data?.message || `Request failed (${res.status})`;
-    throw new Error(msg);
+    // Keep the status and structured details (e.g. details.code = 'NO_MATCHING_DRIVER')
+    // so pages can react to specific cases, not just show the text.
+    throw Object.assign(new Error(msg), { status: res.status, details: data?.error?.details });
   }
 
   return data;
@@ -115,8 +137,16 @@ export function requestRide({ pickupNodeId, dropNodeId, pickupText, dropText, pi
   return request('POST', '/rides/request', { pickupNodeId, dropNodeId, pickupText, dropText, pickupTime });
 }
 
-export function getMatches(rideRequestId, kind = 'auto') {
-  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}&kind=${kind}`).then((res) => res.groups ?? res);
+export function getMatches(rideRequestId, kind = 'auto', opts = {}) {
+  return getMatchesDetailed(rideRequestId, kind, opts).then((res) => res.groups);
+}
+
+// { groups, hiddenByPreference }: hiddenByPreference = groups hidden only by MY
+// women-only preference; relaxPreference shows them for this ride.
+export function getMatchesDetailed(rideRequestId, kind = 'auto', { relaxPreference = false } = {}) {
+  const relax = relaxPreference ? '&relaxPreference=true' : '';
+  return request('GET', `/rides/matches?rideRequestId=${rideRequestId}&kind=${kind}${relax}`)
+    .then((res) => ({ groups: res.groups ?? [], hiddenByPreference: res.hiddenByPreference ?? 0 }));
 }
 
 // ---- Groups ---------------------------------------------
@@ -124,8 +154,23 @@ export function getMatches(rideRequestId, kind = 'auto') {
  * @param {string} rideRequestId           The caller's own ride request ID
  * @param {string[]} memberRideRequestIds  All member request IDs (must include rideRequestId)
  */
-export function joinGroup(rideRequestId, memberRideRequestIds, kind = 'auto') {
-  return request('POST', '/groups/join', { rideRequestId, memberRideRequestIds, kind });
+export function joinGroup(rideRequestId, memberRideRequestIds, kind = 'auto', { relaxPreference = false } = {}) {
+  return request('POST', '/groups/join', { rideRequestId, memberRideRequestIds, kind, relaxPreference });
+}
+
+// Optional gender + pooling preferences: { gender, womenOnlyGroups, driverPreference }.
+export function updatePreferences(prefs) {
+  return request('PUT', '/auth/me/preferences', prefs);
+}
+
+// Payment step completed for this ride (recorded so an unpaid booking can be resumed).
+export function payForGroup(groupId, method) {
+  return request('POST', `/groups/${groupId}/pay`, { method });
+}
+
+// "Allow any driver" for this ride (waives only my own female-driver preference).
+export function setDriverPreference(groupId, { allowAnyDriver }) {
+  return request('POST', `/groups/${groupId}/driver-preference`, { allowAnyDriver });
 }
 
 // Public-transport groups only: where and how the group meets.
@@ -195,5 +240,5 @@ export async function getAssignedDriver(groupId) {
   const data = await request('GET', `/groups/${groupId}/driver`);
   // Normalize the wire field name (plateNumber) to `plate`, which is what
   // Book.jsx/BookingConfirmation.jsx already read — callers don't change.
-  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes, arrivesAt: data.arrivesAt };
+  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes, arrivesAt: data.arrivesAt, femaleDriverAsRequested: data.femaleDriverAsRequested };
 }

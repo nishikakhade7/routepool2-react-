@@ -57,6 +57,13 @@ if (mock) {
     return (await prisma.groupMember.findMany({ where: { user_id: userId }, select: { group_id: true } })).map((m) => m.group_id);
   }
 
+  async function markPaid(groupId, userId, method) {
+    return prisma.groupMember.update({
+      where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+      data: { paid_at: new Date(), payment_method: method },
+    });
+  }
+
   async function markBoarded(groupId, userId) {
     return prisma.groupMember.update({
       where: { group_id_user_id: { group_id: groupId, user_id: userId } },
@@ -64,8 +71,8 @@ if (mock) {
     });
   }
 
-  async function boardedMembershipOf(userId) {
-    return prisma.groupMember.findFirst({ where: { user_id: userId, boarded_at: { not: null } } });
+  async function boardedMembershipsOf(userId) {
+    return prisma.groupMember.findMany({ where: { user_id: userId, boarded_at: { not: null } } });
   }
 
   async function isMember(groupId, userId) {
@@ -79,5 +86,12 @@ if (mock) {
     return prisma.groupMember.delete({ where: { group_id_user_id: { group_id: groupId, user_id: userId } } });
   }
 
-  module.exports = { add, markBoarded, boardedMembershipOf, listByGroup, listGroupIdsByUser, isMember, remove };
+  async function setAllowAnyDriver(groupId, userId, allow) {
+    return prisma.groupMember.update({
+      where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+      data: { allow_any_driver: allow },
+    });
+  }
+
+  module.exports = { add, markPaid, markBoarded, boardedMembershipsOf, listByGroup, listGroupIdsByUser, isMember, remove, setAllowAnyDriver };
 }

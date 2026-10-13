@@ -15,4 +15,8 @@ const me = asyncHandler(async (req, res) => {
   res.json(await authService.me(req.user.id));
 });
 
-module.exports = { sendOtp, verifyOtp, me };
+const updatePreferences = asyncHandler(async (req, res) => {
+  res.json(await authService.updatePreferences(req.user.id, req.body));
+});
+
+module.exports = { sendOtp, verifyOtp, me, updatePreferences };

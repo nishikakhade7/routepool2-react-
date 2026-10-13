@@ -1,19 +1,51 @@
 import { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
-import { getMe } from '../api/client';
+import { getMe, updatePreferences } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, token, login, logout } = useAuth();
   
   const initials = user?.initials || '??';
 
   // Permanent code the student reads out to the driver at pickup.
   const [riderCode, setRiderCode] = useState(user?.riderCode ?? null);
+
+  // Optional gender + pooling preferences. Never shown to other students: groups
+  // only carry a "women-only" label (see backend utils/genderRules.js).
+  const [prefs, setPrefs] = useState(user?.preferences ?? { gender: null, womenOnlyGroups: false, driverPreference: 'any' });
+  const [saving, setSaving] = useState(false);
+  const [prefsMsg, setPrefsMsg] = useState(null);
   useEffect(() => {
-    if (riderCode) return;
-    getMe().then((me) => setRiderCode(me.riderCode)).catch(() => {});
-  }, [riderCode]);
+    getMe().then((me) => {
+      setRiderCode(me.riderCode);
+      if (me.preferences) setPrefs(me.preferences);
+    }).catch(() => {});
+  }, []);
+
+  function changePrefs(patch) {
+    setPrefsMsg(null);
+    setPrefs((p) => {
+      const next = { ...p, ...patch };
+      if (next.gender !== 'female') next.womenOnlyGroups = false; // women-only needs gender female
+      return next;
+    });
+  }
+
+  async function savePrefs() {
+    setSaving(true);
+    setPrefsMsg(null);
+    try {
+      const me = await updatePreferences(prefs);
+      setPrefs(me.preferences);
+      login({ token, user: { ...user, preferences: me.preferences } });
+      setPrefsMsg({ ok: true, text: 'Preferences saved. They apply to your next search.' });
+    } catch (e) {
+      setPrefsMsg({ ok: false, text: e.message });
+    } finally {
+      setSaving(false);
+    }
+  }
   
   return (
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
@@ -82,6 +114,76 @@ export default function Profile() {
                 <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#fff', position: 'absolute', right: 2, top: 2, boxShadow: '0 1px 3px rgba(0,0,0,.1)' }} />
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 6px', color: 'rgba(33,28,38,.45)' }}>Safety preferences (optional)</h2>
+            <div style={{ fontSize: 12.5, color: 'rgba(33,28,38,.55)', fontWeight: 600 }}>
+              🔒 Your gender is never shown to other students. Groups only show a "Women-only" label.
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+            <span>
+              <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif', marginBottom: 4 }}>Gender</span>
+              <span style={{ fontSize: 12.5, color: 'rgba(33,28,38,.5)' }}>Only used to honour women-only groups</span>
+            </span>
+            <select
+              value={prefs.gender ?? ''}
+              onChange={(e) => changePrefs({ gender: e.target.value || null })}
+              style={{ padding: '10px 12px', borderRadius: 12, border: '1.5px solid rgba(33,28,38,.14)', font: '600 14px Karla,sans-serif', background: '#fff' }}
+            >
+              <option value="">Prefer not to say</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="non_binary">Non-binary</option>
+            </select>
+          </label>
+
+          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, opacity: prefs.gender === 'female' ? 1 : 0.5 }}>
+            <span>
+              <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif', marginBottom: 4 }}>Women-only groups</span>
+              <span style={{ fontSize: 12.5, color: 'rgba(33,28,38,.5)' }}>
+                {prefs.gender === 'female'
+                  ? 'Only see women-only groups; groups you start are closed to everyone else. Fewer matches, so savings may be lower.'
+                  : 'Available when your gender is set to female.'}
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={prefs.womenOnlyGroups}
+              disabled={prefs.gender !== 'female'}
+              onChange={(e) => changePrefs({ womenOnlyGroups: e.target.checked })}
+              style={{ width: 20, height: 20, accentColor: '#8A2B6B', flexShrink: 0 }}
+            />
+          </label>
+
+          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+            <span>
+              <span style={{ display: 'block', font: '700 15px Familjen Grotesk,sans-serif', marginBottom: 4 }}>Driver</span>
+              <span style={{ fontSize: 12.5, color: 'rgba(33,28,38,.5)' }}>
+                With "female driver", we only assign a female driver. If none is free, we ask you before allowing anyone else.
+              </span>
+            </span>
+            <select
+              value={prefs.driverPreference}
+              onChange={(e) => changePrefs({ driverPreference: e.target.value })}
+              style={{ padding: '10px 12px', borderRadius: 12, border: '1.5px solid rgba(33,28,38,.14)', font: '600 14px Karla,sans-serif', background: '#fff' }}
+            >
+              <option value="any">Any driver</option>
+              <option value="female">Female driver</option>
+            </select>
+          </label>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <button className="btn-primary" style={{ width: 'auto', padding: '12px 22px' }} disabled={saving} onClick={savePrefs}>
+              {saving ? 'Saving…' : 'Save preferences'}
+            </button>
+            {prefsMsg && (
+              <span style={{ fontSize: 13, fontWeight: 700, color: prefsMsg.ok ? '#0F6B52' : '#B3261E' }}>{prefsMsg.text}</span>
+            )}
           </div>
         </div>
 

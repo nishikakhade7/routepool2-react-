@@ -6,6 +6,7 @@ const groupModel = require('../../models/group.model');
 const groupMemberModel = require('../../models/groupMember.model');
 const { dijkstra } = require('../../utils/dijkstra');
 const ApiError = require('../../utils/ApiError');
+const { groupAccess } = require('../../utils/genderRules');
 const {
   MATCH_BUFFER_MINUTES, MAX_GROUP_SIZE, MIN_ROUTE_OVERLAP, SCORE_WEIGHTS,
 } = require('../../config/matchingConfig');
@@ -58,11 +59,18 @@ function routeSimilarity(a, b, pathTo) {
  * rider may join an Azad Nagar -> Ghatkopar group, but a group of Andheri-bound
  * riders is listed first, so same-route riders end up together.
  *
+ * Gender preference (hard filter, utils/genderRules.js): a women-only group is
+ * never shown to anyone who isn't female, and a student who asked for women-only
+ * groups sees only those - unless they chose to see the others for this ride
+ * (relaxPreference). Groups hidden ONLY by the student's own women-only
+ * preference are counted, so the page can offer "show them for this ride".
+ *
  * Each result includes the fare split as it would be with this rider added.
+ * @returns {{ groups: object[], hiddenByPreference: number }}
  */
 // kind: only pool with groups of the same kind - an auto pool (Book a ride) and a
 // public-transport group (Form a group) are different trips.
-async function findMatches(rideRequestId, userId, kind = 'auto') {
+async function findMatches(rideRequestId, userId, kind = 'auto', { relaxPreference = false } = {}) {
   const target = await rideRequestModel.findById(rideRequestId);
   if (!target || target.user_id !== userId) throw ApiError.notFound('Ride request not found');
   if (target.status !== 'open') throw ApiError.badRequest('This request is no longer open');
@@ -75,7 +83,11 @@ async function findMatches(rideRequestId, userId, kind = 'auto') {
   // Late require: groups.service requires rides.service, which this module sits beside.
   const { fareBreakup } = require('../groups/groups.service');
 
+  const me = await userModel.findById(userId);
+  const myDrop = await nodeModel.findById(target.drop_node_id);
+
   const results = [];
+  let hiddenByPreference = 0;
   for (const g of await groupModel.listForming()) {
     if ((g.kind || 'auto') !== kind) continue;
     if (g.pickup_node_id !== target.pickup_node_id) continue;
@@ -98,12 +110,16 @@ async function findMatches(rideRequestId, userId, kind = 'auto') {
     // group's route or extend it (a route that branches off can't be served).
     if (!pathContains(backbone, targetPath) && !pathContains(targetPath, backbone)) continue;
 
+    const access = groupAccess(me, g, { relax: relaxPreference });
+    if (!access.ok) {
+      if (access.reason === 'not_women_only') hiddenByPreference++;
+      continue;
+    }
+
     const similarity = memberPaths.reduce((t, p) => t + routeSimilarity(targetPath, p, pathTo), 0) / memberPaths.length;
     const timeScore = 1 - maxGapMinutes / MATCH_BUFFER_MINUTES;
     const score = SCORE_WEIGHTS.similarity * similarity + SCORE_WEIGHTS.time * timeScore;
 
-    const me = await userModel.findById(userId);
-    const myDrop = await nodeModel.findById(target.drop_node_id);
     const riders = [
       ...members.map((m) => ({ userId: m.user_id, name: m.name, dropNodeId: m.drop_node_id, dropName: m.drop_name })),
       { userId, name: me?.name, dropNodeId: target.drop_node_id, dropName: myDrop?.name },
@@ -123,6 +139,7 @@ async function findMatches(rideRequestId, userId, kind = 'auto') {
       score: +score.toFixed(3),
       routeOverlap: +overlap.toFixed(2),
       routeSimilarity: +similarity.toFixed(2),
+      womenOnly: Boolean(g.women_only),
       departureTime: new Date(latestStart + MATCH_BUFFER_MINUTES * 60000).toISOString(),
       totalFare: fare.totalFare,
       distanceKm: fare.distanceKm,
@@ -146,7 +163,7 @@ async function findMatches(rideRequestId, userId, kind = 'auto') {
   }
 
   results.sort((a, b) => b.score - a.score);
-  return results;
+  return { groups: results, hiddenByPreference };
 }
 
 module.exports = { findMatches, routeOverlap, routeSimilarity, pathContains };

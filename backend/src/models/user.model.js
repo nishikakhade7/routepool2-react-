@@ -33,5 +33,12 @@ if (mock) {
     });
   }
 
-  module.exports = { findByEmail, findById, createVerified, ensureRiderCode, markVerified };
+  async function updatePreferences(id, { gender, womenOnlyGroups, driverPreference }) {
+    return prisma.user.update({
+      where: { id },
+      data: { gender, women_only_groups: womenOnlyGroups, driver_preference: driverPreference },
+    });
+  }
+
+  module.exports = { findByEmail, findById, createVerified, ensureRiderCode, markVerified, updatePreferences };
 }

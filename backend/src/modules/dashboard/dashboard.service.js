@@ -14,7 +14,7 @@ const pickupTimeOf = (departureTime) => new Date(new Date(departureTime).getTime
 const isActive = (row) => (row.status === 'forming' || row.status === 'confirmed')
   && new Date(row.departureTime).getTime() >= Date.now() - BUFFER_MS;
 
-function toRow({ groupId, pickupName, dropName, dropShort, departureTime, status, fareShare, soloFare, coRiders, coRiderNames }) {
+function toRow({ groupId, pickupName, dropName, dropShort, departureTime, status, fareShare, soloFare, coRiders, coRiderNames, kind = 'auto', paidAt = null }) {
   const row = {
     groupId,
     pickupName: pickupName || '—',
@@ -27,8 +27,13 @@ function toRow({ groupId, pickupName, dropName, dropShort, departureTime, status
     saved: +(Number(soloFare || 0) - Number(fareShare)).toFixed(2),
     coRiders,
     coRiderNames,
+    kind,
+    paid: Boolean(paidAt),
   };
   row.active = isActive(row);
+  // Joined (or started) an auto ride that's still ahead but never paid: resumable.
+  row.paymentPending = kind === 'auto' && status !== 'cancelled' && !paidAt
+    && new Date(row.departureTime).getTime() > Date.now();
   return row;
 }
 
@@ -62,6 +67,8 @@ async function getHistory(userId) {
           soloFare: rr.solo_fare,
           coRiders: others.map((u) => u.initials || '??'),
           coRiderNames: others.map((u) => u.name || 'Unknown'),
+          kind: g.kind || 'auto',
+          paidAt: m.paid_at,
         });
       })
       .filter(Boolean)
@@ -73,7 +80,9 @@ async function getHistory(userId) {
     SELECT g.id           AS group_id,
            g.departure_time,
            g.status::text,
+           g.kind,
            gm.fare_share,
+           gm.paid_at,
            pn.name        AS pickup_name,
            dn.name        AS drop_name,
            dn.short_name  AS drop_short,
@@ -90,7 +99,7 @@ async function getHistory(userId) {
     JOIN group_members gm2 ON gm2.group_id = g.id
     JOIN users u           ON u.id  = gm2.user_id
     WHERE gm.user_id = ${userId}::uuid
-    GROUP BY g.id, g.departure_time, g.status, gm.fare_share,
+    GROUP BY g.id, g.departure_time, g.status, g.kind, gm.fare_share, gm.paid_at,
              pn.name, dn.name, dn.short_name, rr.solo_fare
     ORDER BY g.departure_time DESC
   `;
@@ -105,6 +114,8 @@ async function getHistory(userId) {
     soloFare: r.solo_fare,
     coRiders: r.co_riders || [],
     coRiderNames: r.co_rider_names || [],
+    kind: r.kind || 'auto',
+    paidAt: r.paid_at,
   }));
 }
 
@@ -130,6 +141,9 @@ async function getStats(userId) {
   return {
     ...summarize(rows),
     activeRide,
+    // Every upcoming auto ride this rider joined but hasn't paid for, soonest first.
+    pendingPayments: rows.filter((r) => r.paymentPending)
+      .sort((a, b) => new Date(a.departureTime) - new Date(b.departureTime)),
     recentActivity: rows.slice(0, 5),
   };
 }

@@ -16,7 +16,8 @@ const env = require('../../config/env');
 const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES, LEAVE_LOCK_MINUTES } = require('../../config/matchingConfig');
 const nodeModel = require('../../models/node.model');
 const ridesService = require('../rides/rides.service');
-const { DEMO_DRIVERS, DRIVER_ETA_MINUTES } = require('../../config/drivers');
+const { DEMO_DRIVERS, DRIVER_ETA_MINUTES, DRIVER_BUSY_AFTER_PICKUP_MINUTES } = require('../../config/drivers');
+const { groupAccess, accessMessage, wantsWomenOnly, wantsFemaleDriver, driverRequirement } = require('../../utils/genderRules');
 
 // Joins and leaves run one at a time: each reads the group, then writes it after
 // several awaits, so two riders clicking "join" together could otherwise both
@@ -52,9 +53,20 @@ function alreadyInGroupMessage(g) {
 // A rider may hold seats in several groups at once - plans change, and a pool
 // might not fill. What stops them is boarding: once they hand the driver their
 // rider code, that ride has started and the other seats are no longer theirs to take.
+// Only while that ride is still on: a boarding from a finished ride (pickup +
+// DRIVER_BUSY_AFTER_PICKUP_MINUTES gone) or a cancelled group no longer blocks anything.
 async function boardedBlockReason(userId) {
-  const boarded = await groupMemberModel.boardedMembershipOf(userId);
-  return boarded ? "You've already boarded a ride (you gave the driver your rider code), so you can't join another group." : null;
+  const boarded = await groupMemberModel.boardedMembershipsOf(userId);
+  for (const m of boarded) {
+    const g = await groupModel.findById(m.group_id);
+    if (!g || g.status === 'cancelled') continue;
+    const rideOver = pickupTimeOf(g).getTime() + DRIVER_BUSY_AFTER_PICKUP_MINUTES * 60000 < Date.now();
+    if (!rideOver) {
+      const time = pickupTimeOf(g).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      return `You've already boarded your ${time} ride (you gave the driver your rider code), so you can't join another group until that ride is over.`;
+    }
+  }
+  return null;
 }
 
 async function assertNotBoarded(userId) {
@@ -68,7 +80,9 @@ async function assertNotBoarded(userId) {
 // a group a groupmate already locked in) go through the same endpoint.
 // kind: 'auto' = pooled auto ride (Book a ride), 'transit' = public-transport
 // group (Form a group, which books no auto and gets no driver).
-const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, kind = 'auto' }) => {
+// relaxPreference: the rider chose "show other groups for this ride", so their own
+// women-only preference doesn't stop them joining (or starting) a mixed group.
+const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, kind = 'auto', relaxPreference = false }) => {
   if (!memberRideRequestIds.includes(rideRequestId)) {
     throw ApiError.badRequest('rideRequestId must be included in memberRideRequestIds');
   }
@@ -93,6 +107,7 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, ki
     if (groupIds.length > 1) throw ApiError.conflict('Selected riders are in different groups');
     if (groupIds.length === 1) {
       const g = await groupModel.findById(groupIds[0]);
+      if (g && await groupMemberModel.isMember(g.id, userId)) throw ApiError.conflict("You're already in this group.");
       if (g?.status === 'confirmed') throw ApiError.conflict('This group just filled up - refresh the list and pick another, or start a new group');
       if (!g || g.status !== 'forming') throw ApiError.conflict('This group is no longer open');
       existingGroupId = g.id;
@@ -101,6 +116,10 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, ki
         .filter((id) => !memberRideRequestIds.includes(id));
       requests.push(...await rideRequestModel.findByIds(extraIds));
     }
+  }
+  // Already a member of this group (e.g. a second click from a stale page): never join twice.
+  if (existingGroupId && await groupMemberModel.isMember(existingGroupId, userId)) {
+    throw ApiError.conflict("You're already in this group.");
   }
   if (requests.length > MAX_GROUP_SIZE) throw ApiError.conflict('This group is full');
   const starts = requests.map((r) => new Date(r.window_start).getTime());
@@ -113,6 +132,23 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, ki
       await assertNotBoarded(userId);
     } else if (await boardedBlockReason(r.user_id)) {
       throw ApiError.conflict('One of the selected riders has already boarded another ride');
+    }
+  }
+
+  // Gender preference (hard filter, utils/genderRules.js). A new group is
+  // women-only when the student starting it asked for that; then every rider
+  // entering the group must be allowed into it.
+  const me = await userModel.findById(userId);
+  const targetGroup = existingGroupId
+    ? await groupModel.findById(existingGroupId)
+    : { women_only: wantsWomenOnly(me) && !relaxPreference };
+  for (const r of requests) {
+    if (r.status === 'matched' && r.group_id === existingGroupId) continue;
+    const rider = r.user_id === userId ? me : await userModel.findById(r.user_id);
+    const access = groupAccess(rider, targetGroup, { relax: r.user_id === userId && relaxPreference });
+    if (!access.ok) {
+      if (r.user_id !== userId) throw ApiError.conflict("One of the selected riders can't join this group");
+      throw new ApiError(access.reason === 'women_only_group' ? 403 : 409, accessMessage(access.reason));
     }
   }
 
@@ -147,7 +183,7 @@ const join = oneAtATime(async (userId, { rideRequestId, memberRideRequestIds, ki
     let gid = existingGroupId;
     if (!gid) {
       const departureTime = new Date(Math.max(...requests.map((r) => new Date(r.window_start).getTime())));
-      const created = await groupModel.create({ pickupNodeId: own.pickup_node_id, departureTime, totalFare, kind }, client);
+      const created = await groupModel.create({ pickupNodeId: own.pickup_node_id, departureTime, totalFare, kind, womenOnly: targetGroup.women_only }, client);
       gid = created.id;
     } else {
       await groupModel.updateTotalFare(gid, totalFare, client);
@@ -209,6 +245,7 @@ async function listAvailable(userId) {
   // Only forming groups: joining goes through the Book page's search -> confirm
   // flow, which joins groups (a lone open request is a search, not a group).
   const joinBlockedReason = await boardedBlockReason(userId);
+  const me = await userModel.findById(userId);
 
   // Every live group the student could care about: the ones they can join, plus
   // the ones they are already in (flagged isMine). Hiding their own made the
@@ -227,6 +264,8 @@ async function listAvailable(userId) {
     if (members.length === 0 || pickupTimeOf(g) < new Date()) continue;
     const isMine = members.some((m) => m.user_id === userId);
     if (!isMine && (members.length >= MAX_GROUP_SIZE || g.status !== 'forming')) continue;
+    // Same gender rule as search: never list a group this student can't join.
+    if (!isMine && !groupAccess(me, g).ok) continue;
     await tryPush(`group ${g.id}`, async () => ({
       ...await describeGroup(g, members, userId, !isMine),
       isMine,
@@ -287,6 +326,7 @@ async function describeGroup(g, members, userId, joinAs = false) {
     id: g.id,
     status: g.status,
     kind: g.kind || 'auto',
+    womenOnly: Boolean(g.women_only),
     meetingPoint: g.meeting_point || null,
     transitMode: g.transit_mode || null,
     pickupName: pickup?.name,
@@ -298,12 +338,28 @@ async function describeGroup(g, members, userId, joinAs = false) {
   };
 }
 
+// An auto ride this member hasn't paid for yet, still ahead and not cancelled:
+// the Dashboard / Joined groups offer "Resume booking" for it.
+// (Public-transport groups book nothing, so they're never pending.)
+const paymentPendingFor = (g, member) => (g.kind || 'auto') === 'auto'
+  && g.status !== 'cancelled'
+  && Boolean(member) && !member.paid_at
+  && pickupTimeOf(g).getTime() > Date.now();
+
 // Groups the user has joined, soonest first.
 async function listMine(userId) {
   const out = [];
   for (const id of new Set(await groupMemberModel.listGroupIdsByUser(userId))) {
     const g = await groupModel.findById(id);
-    if (g) out.push(await describeGroup(g, await groupMemberModel.listByGroup(id), userId));
+    if (!g) continue;
+    const members = await groupMemberModel.listByGroup(id);
+    out.push({
+      ...await describeGroup(g, members, userId),
+      paymentPending: paymentPendingFor(g, members.find((m) => m.user_id === userId)),
+      // Pickup time already passed: shown in History, not as an active group.
+      isPast: pickupTimeOf(g).getTime() < Date.now(),
+      leaveLockedReason: leaveLockedReason(g),
+    });
   }
   return out.sort((a, b) => new Date(a.pickupTime) - new Date(b.pickupTime));
 }
@@ -315,6 +371,7 @@ async function listMine(userId) {
 // kept for API compatibility, with the same one-active-group rule up front.
 async function joinById(userId, id) {
   await assertNotBoarded(userId);
+  if (await groupMemberModel.isMember(id, userId)) throw ApiError.conflict("You're already in this group.");
   const g = await groupModel.findById(id);
   if (!g) {
     const other = await rideRequestModel.findById(id);
@@ -344,9 +401,19 @@ async function getGroup(groupId, userId) {
   const members = await groupMemberModel.listByGroup(groupId);
   const pickup = await nodeModel.findById(g.pickup_node_id);
   const fare = await fareBreakup(g.pickup_node_id, ridersOf(members), userId);
+  const prefs = await memberPrefsOf(members);
+  const requirement = driverRequirement(g, prefs);
+  const mine = prefs.find((p) => p.userId === userId);
   return {
     id: g.id,
     groupKey: g.id,
+    womenOnly: Boolean(g.women_only),
+    // What this student needs to know about the driver choice - never who asked.
+    driverPreference: {
+      femaleRequired: requirement.female,
+      youAskedFemale: wantsFemaleDriver(mine?.user),
+      youWaived: Boolean(mine?.allowAnyDriver),
+    },
     status: g.status,
     departureTime: pickupTimeOf(g).toISOString(),
     totalFare: fare.totalFare,
@@ -360,6 +427,10 @@ async function getGroup(groupId, userId) {
     memberRideRequestIds: members.map((m) => m.ride_request_id),
     fare,
     boarded: Boolean(members.find((m) => m.user_id === userId)?.boarded_at),
+    // Resumable booking: has a driver been assigned yet, and has this rider paid?
+    driverAssigned: Boolean(g.driver),
+    youPaid: Boolean(members.find((m) => m.user_id === userId)?.paid_at),
+    paymentPending: paymentPendingFor(g, members.find((m) => m.user_id === userId)),
     members: members.map((m, i) => ({
       userId: m.user_id,
       boarded: Boolean(m.boarded_at),
@@ -400,8 +471,11 @@ async function board(groupId, userId, code) {
 // "Can't make it": drop the rider (and their request), re-split the fare for
 // whoever is left, and reopen the group if it had been full.
 // Minutes until pickup, and whether the rider is still allowed to back out.
+// Locked only while the pickup is still ahead and inside the lock window. Once the
+// pickup time has passed the minutes go negative - that's a past ride (or a group
+// that never filled), not an imminent one, so it must stay leaveable.
 const minutesToPickup = (g) => (pickupTimeOf(g).getTime() - Date.now()) / 60000;
-const leaveLockedReason = (g) => (minutesToPickup(g) <= LEAVE_LOCK_MINUTES
+const leaveLockedReason = (g) => (minutesToPickup(g) > 0 && minutesToPickup(g) <= LEAVE_LOCK_MINUTES
   ? `Pickup is in under ${LEAVE_LOCK_MINUTES} minutes — you're locked in. Message the group if something changed.`
   : null);
 
@@ -431,18 +505,64 @@ const leave = oneAtATime(async (groupId, userId) => {
   return { left: true, groupId };
 });
 
+// Each member's preferences (users are read here only - never sent to other members).
+async function memberPrefsOf(members) {
+  return Promise.all(members.map(async (m) => ({
+    userId: m.user_id,
+    user: await userModel.findById(m.user_id),
+    allowAnyDriver: Boolean(m.allow_any_driver),
+  })));
+}
+
+// Drivers assigned to another group whose ride isn't over yet.
+async function busyDriverPlates(exceptGroupId) {
+  const until = (g) => pickupTimeOf(g).getTime() + DRIVER_BUSY_AFTER_PICKUP_MINUTES * 60000;
+  return new Set((await groupModel.listWithDrivers())
+    .filter((g) => g.id !== exceptGroupId && g.status !== 'cancelled' && Date.now() < until(g))
+    .map((g) => g.driver.plateNumber));
+}
+
+// No driver satisfies the group: say why, and whether THIS student may waive it.
+// Never a silent fallback to a driver nobody agreed to. Privacy: the text never
+// says that another member asked for a female driver - only what will happen.
+function noDriverError(requirement, userId, freeCount) {
+  if (freeCount === 0 || !requirement.female) {
+    return new ApiError(409, 'No drivers are available right now — please wait a few minutes and try again.', { code: 'NO_DRIVER_AVAILABLE', canWaive: false });
+  }
+  const youAsked = requirement.requestedBy.includes(userId);
+  const canWaive = !requirement.womenOnly && youAsked;
+  let message;
+  if (requirement.womenOnly) {
+    message = 'No female drivers available right now. This is a women-only group, so only a female driver will be assigned — please wait a few minutes and try again.';
+  } else if (youAsked) {
+    message = 'No female drivers available right now — wait, or allow any driver?';
+  } else {
+    message = 'A female driver will be assigned to this ride, and none is available right now — please wait a few minutes and try again.';
+  }
+  return new ApiError(409, message, { code: 'NO_MATCHING_DRIVER', canWaive, womenOnly: requirement.womenOnly });
+}
+
 // The group's driver: picked once (first member to confirm), stored on the group,
 // and returned as-is to every member - so all browsers show the same driver/ETA.
+// The pick honours the strictest gender preference in the group (genderRules.js)
+// and skips drivers busy on another live ride.
 async function getDriver(groupId, userId) {
   await assertMembership(groupId, userId);
   const g = await groupModel.findById(groupId);
   let driver = g.driver;
   if (!driver) {
-    const pick = DEMO_DRIVERS[Math.floor(Math.random() * DEMO_DRIVERS.length)];
+    const requirement = driverRequirement(g, await memberPrefsOf(await groupMemberModel.listByGroup(groupId)));
+    const busy = await busyDriverPlates(groupId);
+    const free = DEMO_DRIVERS.filter((d) => !busy.has(d.plateNumber));
+    const eligible = requirement.female ? free.filter((d) => d.gender === 'female') : free;
+    if (eligible.length === 0) throw noDriverError(requirement, userId, free.length);
+
+    const pick = eligible[Math.floor(Math.random() * eligible.length)];
     const { min, max } = DRIVER_ETA_MINUTES;
     const etaMinutes = min + Math.floor(Math.random() * (max - min + 1));
     driver = await groupModel.setDriverIfAbsent(groupId, {
       ...pick,
+      femaleRequested: requirement.female,
       assignedAt: new Date().toISOString(),
       arrivesAt: new Date(Date.now() + etaMinutes * 60000).toISOString(),
     });
@@ -455,7 +575,32 @@ async function getDriver(groupId, userId) {
     plateNumber: driver.plateNumber,
     arrivesAt: new Date(driver.arrivesAt).toISOString(),
     etaMinutes: Math.max(0, Math.ceil(msLeft / 60000)),
+    // Shown as "Female driver, as requested" - only when someone asked for it.
+    femaleDriverAsRequested: Boolean(driver.femaleRequested),
   };
+}
+
+// The rider completed the payment step (after confirming and getting a driver).
+// Recorded on the server so an unpaid booking can be resumed from anywhere.
+async function pay(groupId, userId, { method }) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  if ((g.kind || 'auto') !== 'auto') throw ApiError.badRequest('Public-transport groups have nothing to pay for.');
+  if (g.status === 'cancelled') throw ApiError.conflict('This ride was cancelled.');
+  if (!g.driver) throw ApiError.conflict('Confirm the booking first - a driver is assigned before payment.');
+  const mine = (await groupMemberModel.listByGroup(groupId)).find((m) => m.user_id === userId);
+  if (!mine.paid_at) await groupMemberModel.markPaid(groupId, userId, method);
+  return getGroup(groupId, userId);
+}
+
+// "Allow any driver" for this ride: the student waives their OWN female-driver
+// preference for this group (other members' preferences and women-only stay).
+async function setDriverPreference(groupId, userId, { allowAnyDriver }) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  if (g.driver) throw ApiError.conflict('A driver is already assigned to this ride.');
+  await groupMemberModel.setAllowAnyDriver(groupId, userId, Boolean(allowAnyDriver));
+  return getGroup(groupId, userId);
 }
 
 async function assertMembership(groupId, userId) {
@@ -492,4 +637,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, listChat, postChat, fareBreakup };
+module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, listChat, postChat, fareBreakup };

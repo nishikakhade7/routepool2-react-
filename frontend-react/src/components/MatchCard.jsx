@@ -4,6 +4,7 @@ import Spinner from './Spinner';
 import GroupChat from './GroupChat';
 import { joinGroup, DEMO_GROUP_ID } from '../api/client';
 import { formatFare } from '../utils/formatFare';
+import WomenOnlyBadge from './WomenOnlyBadge';
 
 // Deterministic avatar colors based on name hash
 const AVATAR_PALETTE = [
@@ -32,7 +33,8 @@ const LINE_COLORS = ['#F2A230', '#8A2B6B', '#157F63', '#5B57E0'];
  *   the group back to the page (which joins it and shows the confirm screen)
  *   instead of joining here and navigating away (FormGroup flow).
  */
-export default function MatchCard({ group, index, myRideRequestId, onSelect, kind = 'auto' }) {
+// relaxPreference: the student chose "show other groups for this ride" (women-only preference).
+export default function MatchCard({ group, index, myRideRequestId, onSelect, kind = 'auto', relaxPreference = false }) {
   const navigate = useNavigate();
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState(null);
@@ -69,7 +71,7 @@ export default function MatchCard({ group, index, myRideRequestId, onSelect, kin
     }
 
     try {
-      const result = await joinGroup(myRideRequestId, group.memberRideRequestIds, kind);
+      const result = await joinGroup(myRideRequestId, group.memberRideRequestIds, kind, { relaxPreference });
       navigate(`/groups?joined=${result.id}`);
     } catch (e) {
       setJoinError(e.message);
@@ -108,6 +110,7 @@ export default function MatchCard({ group, index, myRideRequestId, onSelect, kin
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 20 }}>
           <span style={{ font: '700 22px Familjen Grotesk,sans-serif', letterSpacing: '-.03em' }}>
             Group {index + 1}
+            <WomenOnlyBadge show={group.womenOnly} style={{ marginLeft: 10 }} />
           </span>
           <span style={{
             background: isBest ? '#FFF1DB' : '#F4EEE3',

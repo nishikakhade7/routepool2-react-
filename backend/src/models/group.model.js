@@ -4,7 +4,7 @@ if (mock) {
 } else {
   const prisma = require('../config/prisma');
 
-  async function create({ pickupNodeId, departureTime, totalFare, kind = 'auto' }, tx) {
+  async function create({ pickupNodeId, departureTime, totalFare, kind = 'auto', womenOnly = false }, tx) {
     const client = tx || prisma;
     return client.group.create({
       data: {
@@ -12,6 +12,7 @@ if (mock) {
         departure_time: new Date(departureTime),
         total_fare:     totalFare,
         kind,
+        women_only:     womenOnly,
         status:         'forming',
       },
     });
@@ -68,5 +69,18 @@ if (mock) {
     return drivers.get(id);
   }
 
-  module.exports = { create, findById, setMeeting, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent };
+  // Groups with a driver assigned (drivers live in process memory, see above).
+  async function listWithDrivers() {
+    const groups = await prisma.group.findMany({ where: { id: { in: [...drivers.keys()] } } });
+    return groups.map((g) => ({ ...g, driver: drivers.get(g.id) }));
+  }
+
+  // findById callers read g.driver, so attach the in-memory one.
+  const findByIdRaw = findById;
+  async function findByIdWithDriver(id) {
+    const g = await findByIdRaw(id);
+    return g ? { ...g, driver: drivers.get(id) || null } : g;
+  }
+
+  module.exports = { create, findById: findByIdWithDriver, setMeeting, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent, listWithDrivers };
 }

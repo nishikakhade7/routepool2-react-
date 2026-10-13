@@ -4,6 +4,7 @@ import NavBar from '../components/NavBar';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import FareBreakup from '../components/FareBreakup';
+import WomenOnlyBadge from '../components/WomenOnlyBadge';
 import { getDashboardStats, getBusyRoutes, getAvailableGroups, joinGroupById } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -82,6 +83,29 @@ export default function Dashboard() {
             <p style={{ margin: 0, fontSize: 14.5, color: 'rgba(33,28,38,.55)', fontWeight: 600 }}>{dateStr}</p>
           </header>
 
+          {/* Joined (or started) but never paid: resume the exact booking. Its own card,
+              because the unpaid ride isn't necessarily the soonest one shown below. */}
+          {!loading && stats?.pendingPayments?.length > 0 && (
+            <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {stats.pendingPayments.map((p) => (
+                <div key={p.groupId} className="card" style={{ border: '1.5px solid #F2A230', background: '#FFF8EC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ font: '700 16px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 3 }}>
+                      Payment pending for your {p.pickupName} → {p.dropName} group
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(33,28,38,.6)' }}>
+                      Departs {fmt(p.departureTime)} · your share ₹{(p.fareShare ?? 0).toFixed(0)}
+                      {p.coRiderNames?.length ? ` · with ${p.coRiderNames.join(', ')}` : ''}
+                    </div>
+                  </div>
+                  <button className="btn-accent" style={{ width: 'auto', padding: '12px 20px' }} onClick={() => navigate(`/book?resume=${p.groupId}`)}>
+                    Resume booking
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h2 style={{ font: '600 12px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', margin: 0, color: 'rgba(33,28,38,.55)' }}>
@@ -97,7 +121,7 @@ export default function Dashboard() {
             ) : cardErrors.stats ? (
               <div className="error-msg-red">Couldn't load your pool: {cardErrors.stats}</div>
             ) : activeGroup ? (
-              <div className="card-dark" style={{ cursor: 'pointer' }} onClick={() => navigate('/groups')}>
+              <div className="card-dark" style={{ cursor: 'pointer' }} onClick={() => navigate(activeGroup.paymentPending ? `/book?resume=${activeGroup.groupId}` : '/groups')}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, position: 'relative', zIndex: 2 }}>
                   <div>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: activeGroup.status === 'confirmed' ? '#E4F2EC' : '#FFF1DB', color: activeGroup.status === 'confirmed' ? '#0F6B52' : '#A96A0C', padding: '6px 11px', borderRadius: 999, marginBottom: 12 }}>
@@ -108,6 +132,11 @@ export default function Dashboard() {
                         </>
                       )}
                     </div>
+                    {activeGroup.paymentPending && (
+                      <span style={{ marginLeft: 8, display: 'inline-flex', font: '700 10px Karla,sans-serif', letterSpacing: '.12em', textTransform: 'uppercase', background: '#F2A230', color: '#211C26', padding: '6px 11px', borderRadius: 999 }}>
+                        Payment pending · tap to resume
+                      </span>
+                    )}
                     <div style={{ font: '700 24px Familjen Grotesk,sans-serif', letterSpacing: '-.03em', marginBottom: 4 }}>
                       Departs {fmt(activeGroup.departureTime)}
                     </div>
@@ -171,7 +200,7 @@ export default function Dashboard() {
                 <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px', borderBottom: i < available.length - 1 ? '1px solid rgba(33,28,38,.06)' : 'none' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ font: '700 15px Familjen Grotesk,sans-serif', letterSpacing: '-.02em', marginBottom: 2 }}>
-                      {g.pickupName} → {g.dropName}
+                      {g.pickupName} → {g.dropName} <WomenOnlyBadge show={g.womenOnly} style={{ marginLeft: 6 }} />
                       {g.isMine && <span style={{ marginLeft: 8, font: '700 10.5px Karla,sans-serif', letterSpacing: '.1em', textTransform: 'uppercase', color: '#0F6B52', background: '#E4F2EC', borderRadius: 7, padding: '3px 7px' }}>You're in</span>}
                     </div>
                     <div style={{ fontSize: 12, color: 'rgba(33,28,38,.5)', fontWeight: 600 }}>
@@ -182,11 +211,12 @@ export default function Dashboard() {
                   <button
                     className="btn-primary"
                     style={{ width: 'auto', padding: '10px 18px', opacity: g.joinBlockedReason ? 0.4 : 1, cursor: g.joinBlockedReason ? 'not-allowed' : 'pointer' }}
-                    disabled={!!g.joinBlockedReason || joiningId === g.id}
-                    title={g.joinBlockedReason || (g.isMine ? 'Open this group and its chat' : 'Join this group and open its chat')}
-                    onClick={() => (g.isMine ? navigate(`/groups?joined=${g.id}`) : openInBook(g))}
+                    disabled={(!g.isMine && !!g.joinBlockedReason) || joiningId === g.id}
+                    title={g.isMine ? 'View your group and its chat' : (g.joinBlockedReason || 'Join this group and open its chat')}
+                    // Already a member (forming or confirmed/paid): view only - never the join endpoint.
+                    onClick={() => (g.isMine ? navigate(`/groups?view=${g.id}`) : openInBook(g))}
                   >
-                    {joiningId === g.id ? 'Joining…' : g.isMine ? 'Open' : 'Join'}
+                    {joiningId === g.id ? 'Joining…' : g.isMine ? 'View' : 'Join'}
                   </button>
                 </div>
               ))}

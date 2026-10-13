@@ -3,7 +3,7 @@
  * Book (auto-picks the top-scored one) so the mock/real branching lives in
  * exactly one place instead of being duplicated per page.
  */
-import { requestRide, getMatches, USE_MOCK_MATCHING } from './client';
+import { requestRide, getMatchesDetailed, USE_MOCK_MATCHING } from './client';
 
 // Free-text pickup/drop is resolved to the nearest named stop by the backend
 // (backend/src/utils/stopMatcher.js), so there's one matcher, not two.
@@ -95,6 +95,6 @@ export async function runMatchingFlow({ pickupText, dropText, pickupTime, kind =
   onStageChange?.('grouping');
   await new Promise((r) => setTimeout(r, STAGE_DELAY_MS));
 
-  const matches = await getMatches(req.id, kind);
-  return { requestId: req.id, request: req, matches };
+  const { groups: matches, hiddenByPreference } = await getMatchesDetailed(req.id, kind);
+  return { requestId: req.id, request: req, matches, hiddenByPreference };
 }

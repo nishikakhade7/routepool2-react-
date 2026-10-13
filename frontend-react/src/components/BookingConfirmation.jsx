@@ -6,6 +6,7 @@ import { ALLOWED_EMAIL_DOMAIN } from '../constants';
 import { formatRating, formatEta } from '../utils/formatDriver';
 import { formatFare } from '../utils/formatFare';
 import { FareBreakupDetails } from './FareBreakup';
+import WomenOnlyBadge from './WomenOnlyBadge';
 
 function initialsOf(name) {
   return name.split(' ').map((p) => p[0]).join('');
@@ -64,6 +65,7 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
           <p style={{ margin: 0, fontSize: 15.5, color: 'rgba(33,28,38,.58)' }}>
             {route} · {members.length} rider{members.length === 1 ? '' : 's'}
             {driver ? ` · ${driver.name} arriving in ${formatEta(driver.etaMinutes)}` : ''}
+            <WomenOnlyBadge show={group?.womenOnly} style={{ marginLeft: 10 }} />
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -184,6 +186,15 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
               </svg>
               Everyone verified @{ALLOWED_EMAIL_DOMAIN}
             </div>
+            {group?.driverPreference?.femaleRequired && (
+              <div style={{ marginTop: 10, fontSize: 12.5, color: '#8A2B6B', fontWeight: 600 }}>
+                {group.womenOnly
+                  ? 'Women-only group: a female driver will be assigned.'
+                  : group.driverPreference.youAskedFemale && !group.driverPreference.youWaived
+                    ? 'You asked for a female driver: only a female driver will be assigned.'
+                    : 'A female driver will be assigned to this ride.'}
+              </div>
+            )}
           </div>
 
           {/* Route line — real pickup/drop names, purely visual */}
@@ -227,10 +238,14 @@ export default function BookingConfirmation({ group, driver = null, groupId, onC
           </div>
           <button className="btn-primary" style={{ marginTop: 22, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={run(onContinue)}>{continueLabel}</button>
           {/* Under LEAVE_LOCK_MINUTES to pickup the backend refuses to let anyone out,
-              so show why instead of a button that can only fail. */}
+              so show why instead of a button that can only fail. Before the booking is
+              confirmed (no driver yet) the server's "you're locked in" reads as if the
+              seat were already booked, so say what is actually true at that point. */}
           {onLeave && (group?.leaveLockedReason ? (
             <p style={{ margin: '12px 0 0', fontSize: 12.5, lineHeight: 1.5, color: '#A96A0C', textAlign: 'center', fontWeight: 600 }}>
-              🔒 {group.leaveLockedReason}
+              🔒 {driver
+                ? group.leaveLockedReason
+                : `${group.leaveLockedReason.split(' — ')[0]}, so you can no longer leave this group. Confirm to book your seat, or message the group if something changed.`}
             </p>
           ) : (
             <button

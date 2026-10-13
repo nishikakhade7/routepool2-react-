@@ -5,6 +5,14 @@ const { signToken } = require('../../utils/jwt');
 const ApiError = require('../../utils/ApiError');
 const { sendOtpEmail, mailEnabled } = require('../../utils/mailer');
 const env = require('../../config/env');
+const { isFemale } = require('../../utils/genderRules');
+
+// The student's own gender + pooling preferences. Only ever sent to that student.
+const preferencesOf = (user) => ({
+  gender: user.gender || null,
+  womenOnlyGroups: Boolean(user.women_only_groups),
+  driverPreference: user.driver_preference || 'any',
+});
 
 function assertAllowedDomain(email) {
   const domain = email.split('@')[1];
@@ -40,9 +48,10 @@ async function sendOtp(email) {
   return {
     message: 'Verification code sent',
     expiresInSeconds: env.otpExpiryMinutes * 60,
-    // Outside production, return the code too so the API stays testable - but not
-    // once real mail is configured, or anyone could sign in as any student.
-    ...(env.nodeEnv !== 'production' && !mailEnabled ? { devCode: code } : {}),
+    // Never returned to the browser by default: the code arrives by email, or (with
+    // no SMTP configured) is printed in the backend terminal. Test scripts like
+    // scripts/checkGrouping.js can opt in with EXPOSE_DEV_OTP=true (dev only, no real mail).
+    ...(process.env.EXPOSE_DEV_OTP === 'true' && env.nodeEnv !== 'production' && !mailEnabled ? { devCode: code } : {}),
   };
 }
 
@@ -76,6 +85,7 @@ async function verifyOtp(email, code) {
       totalSavings: Number(user.total_savings),
       // Permanent code the rider reads out to the driver at pickup.
       riderCode: await userModel.ensureRiderCode(user.id),
+      preferences: preferencesOf(user),
     },
   };
 }
@@ -91,7 +101,18 @@ async function me(userId) {
     branch: user.branch,
     totalRides: user.total_rides,
     riderCode: await userModel.ensureRiderCode(user.id),
+    preferences: preferencesOf(user),
   };
 }
 
-module.exports = { sendOtp, verifyOtp, me };
+// All optional. Women-only groups need gender 'female': the group stays closed to
+// everyone else, so only women can start or join one.
+async function updatePreferences(userId, { gender = null, womenOnlyGroups = false, driverPreference = 'any' }) {
+  if (womenOnlyGroups && !isFemale({ gender })) {
+    throw ApiError.badRequest('Women-only groups are available to students who set their gender as female.');
+  }
+  await userModel.updatePreferences(userId, { gender, womenOnlyGroups, driverPreference });
+  return me(userId);
+}
+
+module.exports = { sendOtp, verifyOtp, me, updatePreferences };

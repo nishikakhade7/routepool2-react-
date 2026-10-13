@@ -20,7 +20,12 @@ const requestRideSchema = z.object({
 
 const matchesQuerySchema = z.object({
   body: z.any(),
-  query: z.object({ rideRequestId: z.string().uuid(), kind: z.enum(['auto', 'transit']).optional() }),
+  query: z.object({
+    rideRequestId: z.string().uuid(),
+    kind: z.enum(['auto', 'transit']).optional(),
+    // "Show other groups for this ride": ignore my own women-only preference once.
+    relaxPreference: z.enum(['true', 'false']).optional(),
+  }),
   params: z.any(),
 });
 

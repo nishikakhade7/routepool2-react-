@@ -12,7 +12,6 @@ export default function Login() {
   const [stage, setStage] = useState('email'); // 'email' | 'otp' | 'verified'
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [devCode, setDevCode] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [verifiedUser, setVerifiedUser] = useState(null);
@@ -27,8 +26,7 @@ export default function Login() {
     if (!email.trim()) { setError('Please enter your name before the @spit.ac.in'); return; }
     setLoading(true);
     try {
-      const res = await sendOtp(emailFull);
-      if (res.devCode) setDevCode(res.devCode);
+      await sendOtp(emailFull);
       setStage('otp');
     } catch (e) {
       setError(e.message);
@@ -184,13 +182,6 @@ export default function Login() {
               <p style={{ margin: '0 0 26px', fontSize: 14.5, lineHeight: 1.5, color: 'rgba(33,28,38,.58)' }}>
                 Sent to <span style={{ color: '#8A2B6B', fontWeight: 700 }}>{emailFull}</span>
               </p>
-
-              {/* Dev OTP hint */}
-              {devCode && (
-                <div style={{ background: '#FFF1DB', border: '1px solid rgba(169,106,12,.25)', borderRadius: 12, padding: '10px 14px', marginBottom: 16, fontSize: 13, fontWeight: 700, color: '#A96A0C' }}>
-                  Dev OTP: <span style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 3 }}>{devCode}</span>
-                </div>
-              )}
 
               {/* OTP cells */}
               <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>

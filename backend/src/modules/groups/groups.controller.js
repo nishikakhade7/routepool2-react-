@@ -38,6 +38,14 @@ const getDriver = asyncHandler(async (req, res) => {
   res.json(await groupsService.getDriver(req.params.groupId, req.user.id));
 });
 
+const setDriverPreference = asyncHandler(async (req, res) => {
+  res.json(await groupsService.setDriverPreference(req.params.groupId, req.user.id, req.body));
+});
+
+const pay = asyncHandler(async (req, res) => {
+  res.json(await groupsService.pay(req.params.groupId, req.user.id, req.body));
+});
+
 const getChat = asyncHandler(async (req, res) => {
   const messages = await groupsService.listChat(req.params.groupId, req.user.id);
   res.json({ messages });
@@ -48,4 +56,4 @@ const postChat = asyncHandler(async (req, res) => {
   res.status(201).json(message);
 });
 
-module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, getChat, postChat };
+module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, getChat, postChat };
