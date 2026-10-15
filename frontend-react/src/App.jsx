@@ -7,6 +7,7 @@ import FormGroup from './pages/FormGroup';
 import Book from './pages/Book';
 import History from './pages/History';
 import JoinedGroups from './pages/JoinedGroups';
+import Admin from './pages/Admin';
 import Notifications from './pages/Notifications';
 import Profile from './pages/Profile';
 import CampusInsights from './pages/CampusInsights';
@@ -31,6 +32,8 @@ export default function App() {
           <Route path="/book" element={<ProtectedRoute><Book /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/groups" element={<ProtectedRoute><JoinedGroups /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+          <Route path="/admin/:tab" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/campus-insights" element={<ProtectedRoute><CampusInsights /></ProtectedRoute>} />

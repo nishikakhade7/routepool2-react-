@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { sendOtp, verifyOtp } from '../api/client';
+import { sendOtp, verifyOtp, adminLogin } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import Spinner from '../components/Spinner';
 import { ALLOWED_EMAIL_DOMAIN } from '../constants';
@@ -9,7 +9,9 @@ const DOMAIN = `@${ALLOWED_EMAIL_DOMAIN}`;
 const KEYS = ['1','2','3','4','5','6','7','8','9','←','0','✓'];
 
 export default function Login() {
-  const [stage, setStage] = useState('email'); // 'email' | 'otp' | 'verified'
+  const [stage, setStage] = useState('email'); // 'email' | 'staff' | 'otp' | 'verified'
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffPassword, setStaffPassword] = useState('');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,6 +23,21 @@ export default function Login() {
   const emailFull = `${email.trim()}${DOMAIN}`;
   const lineAnim = 'drawLine 1.8s cubic-bezier(.4,0,.2,1) both';
 
+  // Staff: email + password, no code. The panel itself is still staff-gated server-side.
+  async function handleStaffLogin() {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await adminLogin(staffEmail.trim(), staffPassword);
+      login(res);
+      navigate(res.user?.isAdmin ? '/admin/vehicles' : '/dashboard');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSendCode() {
     setError(null);
     if (!email.trim()) { setError('Please enter your name before the @spit.ac.in'); return; }
@@ -29,7 +46,13 @@ export default function Login() {
       await sendOtp(emailFull);
       setStage('otp');
     } catch (e) {
-      setError(e.message);
+      // Staff accounts never get a code: go straight to the password step.
+      if (e.details?.code === 'STAFF_PASSWORD_REQUIRED') {
+        setStaffEmail(emailFull);
+        setStage('staff');
+      } else {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -171,6 +194,49 @@ export default function Login() {
                 {loading ? 'Sending…' : 'Send verification code'}
               </button>
               {error && <p style={{ margin: '12px 0 0', fontSize: 13, fontWeight: 600, color: '#C24444' }}>{error}</p>}
+            </div>
+          )}
+
+          {/* Stage: staff password sign-in (no OTP for admin accounts) */}
+          {stage === 'staff' && (
+            <div style={{ animation: 'screenIn .34s cubic-bezier(.2,.7,.2,1)' }}>
+              <div style={{ font: '600 11px Karla,sans-serif', letterSpacing: '.14em', textTransform: 'uppercase', color: 'rgba(33,28,38,.42)', marginBottom: 10 }}>Staff</div>
+              <h2 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 29, letterSpacing: '-.03em', margin: '0 0 8px' }}>Sign in with your password</h2>
+              <p style={{ margin: '0 0 22px', fontSize: 14.5, lineHeight: 1.5, color: 'rgba(33,28,38,.58)' }}>
+                {staffEmail} is a staff account, so it signs in with a password instead of a code.
+              </p>
+
+              <label className="input-label">Password</label>
+              <div className="input-row" style={{ padding: '0 16px' }}>
+                <input
+                  type="password"
+                  value={staffPassword}
+                  onChange={e => setStaffPassword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleStaffLogin()}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  style={{ width: '100%', border: 0, outline: 0, background: 'transparent', font: '500 15px Karla,sans-serif', color: '#211C26', padding: '14px 0' }}
+                />
+              </div>
+
+              <button
+                className="btn-accent"
+                onClick={handleStaffLogin}
+                disabled={loading || !staffPassword}
+                style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+              >
+                {loading ? <Spinner size="sm" /> : null}
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+
+              {error && <p style={{ margin: '12px 0 0', fontSize: 13, fontWeight: 600, color: '#C24444' }}>{error}</p>}
+
+              <button
+                onClick={() => { setError(null); setStaffPassword(''); setStage('email'); }}
+                style={{ marginTop: 18, width: '100%', border: 0, background: 'transparent', font: '600 12.5px Karla,sans-serif', color: 'rgba(33,28,38,.5)', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Use a different email
+              </button>
             </div>
           )}
 

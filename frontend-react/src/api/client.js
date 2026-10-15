@@ -98,6 +98,11 @@ export function sendOtp(email) {
   return request('POST', '/auth/send-otp', { email });
 }
 
+// Staff sign in with a password instead of an emailed code.
+export function adminLogin(email, password) {
+  return request('POST', '/auth/admin-login', { email, password });
+}
+
 export function verifyOtp(email, otp) {
   return request('POST', '/auth/verify-otp', { email, code: otp });
 }
@@ -210,6 +215,60 @@ export function getMe() {
   return request('GET', '/auth/me');
 }
 
+// --- admin panel (staff only; the backend refuses everyone else) ---------
+export function getAdminRides(includePast = false) {
+  return request('GET', `/admin/rides?includePast=${includePast}`).then((r) => r.rides ?? r);
+}
+export const cancelRide = (groupId, reason) => request('POST', `/admin/rides/${groupId}/cancel`, { reason });
+export const unassignDriver = (groupId, reason) => request('POST', `/admin/rides/${groupId}/unassign-driver`, { reason });
+export const getStudents = () => request('GET', '/admin/students').then((r) => r.students ?? r);
+export const setStudentStatus = (userId, suspended, reason) => request('PATCH', `/admin/students/${userId}/status`, { suspended, reason });
+export const getSafetyReports = () => request('GET', '/admin/reports').then((r) => r.reports ?? r);
+export const resolveReport = (id, status, resolution) => request('PATCH', `/admin/reports/${id}`, { status, resolution });
+export const getNotices = () => request('GET', '/admin/notices').then((r) => r.notices ?? r);
+export const postNotice = (message, level, expiresAt) => request('POST', '/admin/notices', { message, level, expiresAt });
+export const deleteNotice = (id) => request('DELETE', `/admin/notices/${id}`);
+export const getAuditLog = () => request('GET', '/admin/audit').then((r) => r.actions ?? r);
+
+// --- students -----------------------------------------------------------
+export const getActiveNotices = () => request('GET', '/admin/notices/active').then((r) => r.notices ?? r);
+export const REPORT_CATEGORIES = ['unsafe driving', 'harassment', 'no show', 'payment issue', 'other'];
+export const fileSafetyReport = (groupId, { aboutUserId, aboutPlate, category, message }) =>
+  request('POST', `/admin/reports/groups/${groupId}`, { aboutUserId, aboutPlate, category, message });
+
+// --- vehicle maintenance ------------------------------------------------
+// Quick tags a rider can attach to a rating (must match backend vehicleRules.js).
+export const COMPLAINT_TAGS = ['dirty seats', 'meter not working', 'unsafe driving', 'poor condition', 'rash lane changes'];
+
+export function rateVehicle(groupId, { cleanliness, condition, tags }) {
+  return request('POST', `/vehicles/groups/${groupId}/feedback`, { cleanliness, condition, tags });
+}
+
+// Admin panel (staff only - the backend refuses everyone else).
+export function getVehicles() {
+  return request('GET', '/vehicles').then((res) => res.vehicles ?? res);
+}
+
+export function updateVehicleDocuments(plate, patch) {
+  return request('PATCH', `/vehicles/${encodeURIComponent(plate)}/documents`, patch);
+}
+
+export function setVehicleStatus(plate, status, reason) {
+  return request('PATCH', `/vehicles/${encodeURIComponent(plate)}/status`, { status, reason });
+}
+
+export function logVehicleService(plate, servicedOn) {
+  return request('POST', `/vehicles/${encodeURIComponent(plate)}/service`, { servicedOn });
+}
+
+export function submitInspection(plate, photos) {
+  return request('POST', `/vehicles/${encodeURIComponent(plate)}/inspections`, { photos });
+}
+
+export function reviewInspection(id, approve, note) {
+  return request('PATCH', `/vehicles/inspections/${id}`, { approve, note });
+}
+
 export function getChat(groupId) {
   return request('GET', `/groups/${groupId}/chat`).then((res) => res.messages ?? res);
 }
@@ -240,5 +299,5 @@ export async function getAssignedDriver(groupId) {
   const data = await request('GET', `/groups/${groupId}/driver`);
   // Normalize the wire field name (plateNumber) to `plate`, which is what
   // Book.jsx/BookingConfirmation.jsx already read — callers don't change.
-  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes, arrivesAt: data.arrivesAt, femaleDriverAsRequested: data.femaleDriverAsRequested };
+  return { name: data.name, rating: data.rating, vehicle: data.vehicle, plate: data.plateNumber, etaMinutes: data.etaMinutes, arrivesAt: data.arrivesAt, femaleDriverAsRequested: data.femaleDriverAsRequested, vehicleCheck: data.vehicleCheck };
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import RateVehicle from './RateVehicle';
 import VisionBadge from './VisionBadge';
 import GroupChat from './GroupChat';
 import { formatFare } from '../utils/formatFare';
@@ -166,6 +167,9 @@ export default function PaymentSuccess({ driver, amount, tripTotal, paymentMetho
           Back to dashboard
         </button>
       </div>
+
+      {/* Rider feedback on the auto: repeated complaints flag it for inspection. */}
+      {groupId && <RateVehicle groupId={groupId} />}
 
       {chatOpen && groupId && (
         <GroupChat

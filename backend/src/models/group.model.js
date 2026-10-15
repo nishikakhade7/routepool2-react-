@@ -64,6 +64,10 @@ if (mock) {
   // ponytail: no driver column in the Postgres schema yet - kept in process memory
   // (same "decided once per group" rule as the mock store); add a column to persist it.
   const drivers = new Map();
+  async function clearDriver(id) {
+    return prisma.group.update({ where: { id }, data: { driver: null } });
+  }
+
   async function setDriverIfAbsent(id, driver) {
     if (!drivers.has(id)) drivers.set(id, driver);
     return drivers.get(id);
@@ -82,5 +86,5 @@ if (mock) {
     return g ? { ...g, driver: drivers.get(id) || null } : g;
   }
 
-  module.exports = { create, findById: findByIdWithDriver, setMeeting, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent, listWithDrivers };
+  module.exports = { create, findById: findByIdWithDriver, setMeeting, listForming, setStatus, updateTotalFare, findByExactRideRequestSet, setDriverIfAbsent, clearDriver, listWithDrivers };
 }

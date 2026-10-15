@@ -9,6 +9,7 @@ import PaymentMethodSelect from '../components/PaymentMethodSelect';
 import PaymentSuccess from '../components/PaymentSuccess';
 import { joinGroup, getGroup, leaveGroup, getMatchesDetailed, getAssignedDriver, setDriverPreference, payForGroup, boardRide, getMe } from '../api/client';
 import MatchCard from '../components/MatchCard';
+import VehicleCheckBadge from '../components/VehicleCheckBadge';
 import WomenOnlyChoice from '../components/WomenOnlyChoice';
 import { runMatchingFlow } from '../api/matching';
 import { formatRating, formatEta } from '../utils/formatDriver';
@@ -628,6 +629,7 @@ export default function Book() {
                     )}
                   </div>
                   <div style={{ fontSize: 13.5, color: 'rgba(33,28,38,.55)', fontWeight: 600, marginTop: 4 }}>{driver.vehicle}</div>
+                  <VehicleCheckBadge check={driver.vehicleCheck} />
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div className="input-label" style={{ marginBottom: 3 }}>ETA</div>

@@ -4,6 +4,8 @@ const { generateOtp, hashOtp } = require('../../utils/otp');
 const { signToken } = require('../../utils/jwt');
 const ApiError = require('../../utils/ApiError');
 const { sendOtpEmail, mailEnabled } = require('../../utils/mailer');
+const { isAdmin } = require('../../middleware/requireAdmin');
+const { verifyPassword } = require('../../utils/password');
 const env = require('../../config/env');
 const { isFemale } = require('../../utils/genderRules');
 
@@ -31,6 +33,9 @@ function deriveIdentity(email) {
 
 async function sendOtp(email) {
   assertAllowedDomain(email);
+  // Staff sign in with a password, so an admin address never gets a code -
+  // otherwise the password would just be a second, weaker door.
+  if (isAdmin(email)) throw ApiError.badRequest('This is a staff account — enter your password.', { code: 'STAFF_PASSWORD_REQUIRED' });
   await otpModel.invalidateAllForEmail(email);
 
   const code = generateOtp();
@@ -74,20 +79,58 @@ async function verifyOtp(email, code) {
   const token = signToken(user);
   return {
     token,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      initials: user.initials,
-      branch: user.branch,
-      isVerified: user.is_verified,
-      totalRides: user.total_rides,
-      totalSavings: Number(user.total_savings),
-      // Permanent code the rider reads out to the driver at pickup.
-      riderCode: await userModel.ensureRiderCode(user.id),
-      preferences: preferencesOf(user),
-    },
+    user: await publicUser(user),
   };
+}
+
+// The session payload both sign-in routes return.
+async function publicUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    initials: user.initials,
+    branch: user.branch,
+    isVerified: user.is_verified,
+    totalRides: user.total_rides,
+    totalSavings: Number(user.total_savings),
+    // Permanent code the rider reads out to the driver at pickup.
+    riderCode: await userModel.ensureRiderCode(user.id),
+    isAdmin: isAdmin(user.email),
+    preferences: preferencesOf(user),
+  };
+}
+
+// Wrong-password lockout, per email, in memory (one backend process).
+// ponytail: resets on restart; move to the store if staff logins ever scale.
+const attempts = new Map();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 10 * 60 * 1000;
+
+// Staff sign-in: email + password, no OTP. The password is only ever compared
+// against the scrypt hash in ADMIN_PASSWORD_HASH; the plaintext is never stored.
+async function adminLogin(email, password) {
+  const key = String(email).toLowerCase();
+  const state = attempts.get(key);
+  if (state && state.count >= MAX_ATTEMPTS && Date.now() - state.last < LOCKOUT_MS) {
+    throw new ApiError(429, 'Too many failed attempts. Try again in a few minutes.');
+  }
+
+  const hash = process.env.ADMIN_PASSWORD_HASH;
+  // Same message either way: don't reveal which staff addresses exist.
+  const bad = ApiError.unauthorized('Wrong email or password');
+  if (!isAdmin(email) || !hash || !verifyPassword(password, hash)) {
+    attempts.set(key, { count: (state?.count || 0) + 1, last: Date.now() });
+    throw bad;
+  }
+  attempts.delete(key);
+
+  let user = await userModel.findByEmail(key);
+  if (!user) {
+    const { name, initials } = deriveIdentity(key);
+    user = await userModel.createVerified({ email: key, name, initials, branch: null });
+  }
+  return { token: signToken(user), user: await publicUser(user) };
 }
 
 async function me(userId) {
@@ -101,6 +144,7 @@ async function me(userId) {
     branch: user.branch,
     totalRides: user.total_rides,
     riderCode: await userModel.ensureRiderCode(user.id),
+    isAdmin: isAdmin(user.email),
     preferences: preferencesOf(user),
   };
 }
@@ -115,4 +159,4 @@ async function updatePreferences(userId, { gender = null, womenOnlyGroups = fals
   return me(userId);
 }
 
-module.exports = { sendOtp, verifyOtp, me, updatePreferences };
+module.exports = { sendOtp, verifyOtp, adminLogin, me, updatePreferences };

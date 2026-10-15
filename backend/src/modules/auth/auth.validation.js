@@ -28,4 +28,13 @@ const preferencesSchema = z.object({
   params: z.any(),
 });
 
-module.exports = { sendOtpSchema, verifyOtpSchema, preferencesSchema };
+const adminLoginSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email(),
+    password: z.string().min(8).max(200),
+  }),
+  query: z.any(),
+  params: z.any(),
+});
+
+module.exports = { adminLoginSchema, sendOtpSchema, verifyOtpSchema, preferencesSchema };

@@ -3,6 +3,8 @@ const authRoutes = require('../modules/auth/auth.routes');
 const dashboardRoutes = require('../modules/dashboard/dashboard.routes');
 const ridesRoutes = require('../modules/rides/rides.routes');
 const groupsRoutes = require('../modules/groups/groups.routes');
+const vehiclesRoutes = require('../modules/vehicles/vehicles.routes');
+const adminRoutes = require('../modules/admin/admin.routes');
 
 const router = Router();
 
@@ -10,6 +12,8 @@ router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/rides', ridesRoutes);
 router.use('/groups', groupsRoutes);
+router.use('/vehicles', vehiclesRoutes);
+router.use('/admin', adminRoutes);
 
 // Dev-only: POST /api/dev/reset-rides (npm run reset-rides). Only mounted when the
 // in-memory mock store is in use - with real Postgres this route doesn't exist.

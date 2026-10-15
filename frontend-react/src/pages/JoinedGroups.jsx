@@ -4,6 +4,7 @@ import NavBar from '../components/NavBar';
 import Spinner from '../components/Spinner';
 import GroupChat from '../components/GroupChat';
 import FareBreakup from '../components/FareBreakup';
+import ReportIssue from '../components/ReportIssue';
 import WomenOnlyBadge from '../components/WomenOnlyBadge';
 import { getMyGroups, leaveGroup, setGroupMeeting } from '../api/client';
 
@@ -135,6 +136,7 @@ export default function JoinedGroups() {
                   {g.kind === 'transit'
                     ? <MeetingDetails group={g} saving={savingId === g.id} onSave={saveMeeting} />
                     : <FareBreakup fare={g.fare} />}
+                  <ReportIssue group={g} />
                   {g.paymentPending && (
                     <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: '#A96A0C' }}>Payment pending — resume to finish your booking.</div>
                   )}

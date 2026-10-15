@@ -12,6 +12,8 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const { user } = useAuth();
+  // Staff-only tab; the backend refuses the data to everyone else anyway.
+  const navItems = user?.isAdmin ? [...NAV_ITEMS, { to: '/admin/vehicles', label: 'Admin' }] : NAV_ITEMS;
 
   const initials = user?.initials || '??';
   const firstName = user?.name?.split(' ')[0] || 'You';
@@ -27,7 +29,7 @@ export default function NavBar() {
 
         {/* Nav */}
         <nav className="navbar-nav" aria-label="Main navigation">
-          {NAV_ITEMS.map(({ to, label }) => (
+          {navItems.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}

@@ -14,6 +14,7 @@ const { buildCumulativePath, splitFareBySegments, autoFareForDistance } = requir
 const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
 const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES, LEAVE_LOCK_MINUTES } = require('../../config/matchingConfig');
+const vehiclesService = require('../vehicles/vehicles.service');
 const nodeModel = require('../../models/node.model');
 const ridesService = require('../rides/rides.service');
 const { DEMO_DRIVERS, DRIVER_ETA_MINUTES, DRIVER_BUSY_AFTER_PICKUP_MINUTES } = require('../../config/drivers');
@@ -464,7 +465,17 @@ async function board(groupId, userId, code) {
   await assertMembership(groupId, userId);
   const expected = await userModel.ensureRiderCode(userId);
   if (String(code).trim() !== expected) throw ApiError.badRequest('That rider code does not match');
+  const members = await groupMemberModel.listByGroup(groupId);
   await groupMemberModel.markBoarded(groupId, userId);
+
+  // The ride is under way: put its distance on the auto's odometer, once per
+  // group (the first rider to board), which is what makes servicing fall due.
+  // ponytail: no ride-completed event exists yet - move this to that event when one does.
+  const g = await groupModel.findById(groupId);
+  if (g?.driver?.plateNumber && !members.some((m) => m.boarded_at)) {
+    const fare = await fareBreakup(g.pickup_node_id, ridersOf(members), null);
+    await vehiclesService.recordRideKm(g.driver.plateNumber, fare.distanceKm);
+  }
   return getGroup(groupId, userId);
 }
 
@@ -553,7 +564,10 @@ async function getDriver(groupId, userId) {
   if (!driver) {
     const requirement = driverRequirement(g, await memberPrefsOf(await groupMemberModel.listByGroup(groupId)));
     const busy = await busyDriverPlates(groupId);
-    const free = DEMO_DRIVERS.filter((d) => !busy.has(d.plateNumber));
+    // Maintenance gate: an auto with an expired document, or one suspended over
+    // rider complaints, is off the road - it is never assigned a new ride.
+    const roadworthy = await vehiclesService.eligiblePlates();
+    const free = DEMO_DRIVERS.filter((d) => !busy.has(d.plateNumber) && roadworthy.has(d.plateNumber));
     const eligible = requirement.female ? free.filter((d) => d.gender === 'female') : free;
     if (eligible.length === 0) throw noDriverError(requirement, userId, free.length);
 
@@ -569,6 +583,8 @@ async function getDriver(groupId, userId) {
   }
   const msLeft = new Date(driver.arrivesAt).getTime() - Date.now();
   return {
+    // "Verified vehicle - inspected 12 Oct" on the driver card.
+    vehicleCheck: await vehiclesService.riderBadge(driver.plateNumber),
     name: driver.name,
     rating: driver.rating,
     vehicle: driver.vehicle,
@@ -578,6 +594,14 @@ async function getDriver(groupId, userId) {
     // Shown as "Female driver, as requested" - only when someone asked for it.
     femaleDriverAsRequested: Boolean(driver.femaleRequested),
   };
+}
+
+// Which auto this group actually rode in: what rider feedback is filed against.
+async function assignedPlate(groupId, userId) {
+  await assertMembership(groupId, userId);
+  const g = await groupModel.findById(groupId);
+  if (!g?.driver?.plateNumber) throw ApiError.badRequest('No driver has been assigned to this ride yet');
+  return g.driver.plateNumber;
 }
 
 // The rider completed the payment step (after confirming and getting a driver).
@@ -637,4 +661,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, board, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, listChat, postChat, fareBreakup };
+module.exports = { join, board, assignedPlate, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, listChat, postChat, fareBreakup };

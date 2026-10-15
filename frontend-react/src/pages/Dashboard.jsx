@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
+import NoticeBanner from '../components/NoticeBanner';
 import RouteVisual from '../components/RouteVisual';
 import Spinner from '../components/Spinner';
 import FareBreakup from '../components/FareBreakup';
@@ -76,6 +77,8 @@ export default function Dashboard() {
         {/* Left Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
           
+          <NoticeBanner />
+
           <header>
             <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 38, letterSpacing: '-.03em', margin: '0 0 4px' }}>
               Good evening, {firstName}.

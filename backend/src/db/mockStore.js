@@ -31,6 +31,48 @@ const GROUP_MEMBERS = [];
 const CHAT_MESSAGES = [];
 
 // Mutable in-memory tables (arrays are mutated in place)
+
+// ── Vehicle records (one per driver/auto) ────────────────────────────────────
+// Seeded from config/drivers.js. Document expiries are spread around today so
+// the eligibility gate is visible in a demo: two autos are off the road.
+const { DEMO_DRIVERS } = require('../config/drivers');
+
+const dayMs = 86400000;
+const inDays = (n) => new Date(Date.now() + n * dayMs);
+// Deterministic per-plate offsets: same seed every reset, no random demo data.
+const DOC_OFFSETS = [
+  { permit: 300, insurance: 210, puc: 120, fitness: 400, service: -40, km: 1200 },
+  { permit: 180, insurance: 10, puc: 95, fitness: 260, service: -90, km: 2400 },   // insurance expiring soon
+  { permit: 240, insurance: 150, puc: -5, fitness: 310, service: -20, km: 800 },   // PUC EXPIRED -> no new rides
+  { permit: 90, insurance: 120, puc: 40, fitness: 150, service: -200, km: 3400 },  // service overdue by date + km
+  { permit: -12, insurance: 200, puc: 160, fitness: 220, service: -60, km: 1500 }, // permit EXPIRED -> no new rides
+  { permit: 365, insurance: 280, puc: 190, fitness: 420, service: -15, km: 450 },
+  { permit: 200, insurance: 95, puc: 75, fitness: 330, service: -70, km: 1900 },
+];
+
+const VEHICLES = DEMO_DRIVERS.map((d, i) => {
+  const o = DOC_OFFSETS[i % DOC_OFFSETS.length];
+  return {
+    plate_number: d.plateNumber,
+    registration_number: d.plateNumber.replace(/\s/g, ''),
+    driver_name: d.name,
+    gender: d.gender,
+    rating: d.rating,
+    vehicle: d.vehicle,
+    permit_expiry: inDays(o.permit),
+    insurance_expiry: inDays(o.insurance),
+    puc_expiry: inDays(o.puc),
+    fitness_expiry: inDays(o.fitness),
+    documents_status: 'approved',            // admin-approved paperwork
+    status: 'active',                        // or 'suspended'
+    flagged_reason: null,                    // set when complaints pile up
+    last_service_date: inDays(o.service),
+    last_service_km: 0,
+    km_driven: o.km,                         // accrues from rides that start
+    created_at: new Date(),
+  };
+});
+
 const db = {
   users: [...USERS],
   otpCodes: [],
@@ -40,6 +82,12 @@ const db = {
   rideRequests: [...RIDE_REQUESTS],
   groupMembers: [...GROUP_MEMBERS],
   chatMessages: [...CHAT_MESSAGES],
+  vehicles: [...VEHICLES],
+  safetyReports: [],
+  notices: [],
+  adminActions: [],
+  inspections: [],
+  vehicleFeedback: [],
 };
 
 // Persist to disk so a backend restart (nodemon on every file save) doesn't wipe
@@ -51,6 +99,14 @@ try {
   const isoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
   Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'), (k, v) => (typeof v === 'string' && isoDate.test(v) ? new Date(v) : v)));
 } catch { /* no snapshot yet: start from seed data */ }
+// A snapshot written before vehicles existed: seed them rather than crash later.
+if (!db.vehicles?.length) db.vehicles = [...VEHICLES];
+db.inspections = db.inspections || [];
+db.safetyReports = db.safetyReports || [];
+db.notices = db.notices || [];
+db.adminActions = db.adminActions || [];
+db.vehicleFeedback = db.vehicleFeedback || [];
+
 // Stops/edges always come from config, never from an old snapshot.
 db.nodes = STOP_NODES.map((n) => ({ ...n }));
 db.edges = STOP_EDGES.map((e) => ({ ...e }));
@@ -134,6 +190,14 @@ const userModel = {
     const user = db.users.find(u => u.id === id);
     if (user && !user.rider_code) user.rider_code = newRiderCode();
     return user?.rider_code || null;
+  },
+  async setStatus(id, { suspended, reason }) {
+    const user = db.users.find(u => u.id === id);
+    if (user) Object.assign(user, { suspended_at: suspended ? new Date() : null, suspended_reason: suspended ? (reason || 'Suspended by admin') : null });
+    return user || null;
+  },
+  async listAll() {
+    return db.users;
   },
   async markVerified(id) {
     const user = db.users.find(u => u.id === id);
@@ -297,6 +361,12 @@ const groupModel = {
     return g;
   },
   // First caller wins: a group's driver is decided once and never replaced.
+  // Admin pulled the auto off this ride: the next driver request picks another.
+  async clearDriver(id) {
+    const g = db.groups.find(g => g.id === id);
+    if (g) g.driver = null;
+    return g || null;
+  },
   async setDriverIfAbsent(id, driver) {
     const g = db.groups.find(g => g.id === id);
     if (!g) return null;
@@ -395,6 +465,110 @@ const groupMemberModel = {
   },
 };
 
+// ── Admin models mock (safety reports, notices, audit trail) ─────────────────
+
+const safetyReportModel = {
+  async create(row) {
+    const r = { id: uuidv4(), status: 'open', created_at: new Date(), resolved_at: null, resolved_by: null, resolution: null, ...row };
+    db.safetyReports.push(r);
+    return r;
+  },
+  async findById(id) {
+    return db.safetyReports.find(r => r.id === id) || null;
+  },
+  async listAll() {
+    return [...db.safetyReports].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+  async resolve(id, { status, resolvedBy, resolution }) {
+    const r = db.safetyReports.find(r => r.id === id);
+    if (r) Object.assign(r, { status, resolved_by: resolvedBy, resolution: resolution || null, resolved_at: new Date() });
+    return r || null;
+  },
+};
+
+const noticeModel = {
+  async create({ message, level, createdBy, expiresAt }) {
+    const n = { id: uuidv4(), message, level, created_by: createdBy, expires_at: expiresAt || null, created_at: new Date() };
+    db.notices.push(n);
+    return n;
+  },
+  async listAll() {
+    return [...db.notices].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+  async remove(id) {
+    const i = db.notices.findIndex(n => n.id === id);
+    return i === -1 ? null : db.notices.splice(i, 1)[0];
+  },
+};
+
+const adminActionModel = {
+  async create({ adminEmail, action, target, details }) {
+    const a = { id: uuidv4(), admin_email: adminEmail, action, target: target || null, details: details || null, created_at: new Date() };
+    db.adminActions.push(a);
+    return a;
+  },
+  async list(limit = 200) {
+    return [...db.adminActions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, limit);
+  },
+};
+
+// ── Vehicle models mock ──────────────────────────────────────────────────────
+
+const vehicleModel = {
+  async listAll() {
+    return db.vehicles;
+  },
+  async findByPlate(plate) {
+    return db.vehicles.find(v => v.plate_number === plate) || null;
+  },
+  async update(plate, patch) {
+    const v = db.vehicles.find(v => v.plate_number === plate);
+    if (v) Object.assign(v, patch);
+    return v || null;
+  },
+  async addKm(plate, km) {
+    const v = db.vehicles.find(v => v.plate_number === plate);
+    if (v) v.km_driven = +(Number(v.km_driven || 0) + Number(km || 0)).toFixed(2);
+    return v || null;
+  },
+};
+
+const inspectionModel = {
+  async create({ plateNumber, photos, submittedBy }) {
+    const row = { id: uuidv4(), plate_number: plateNumber, photos, submitted_by: submittedBy, submitted_at: new Date(), status: 'pending', reviewed_at: null, reviewed_by: null, note: null };
+    db.inspections.push(row);
+    return row;
+  },
+  async findById(id) {
+    return db.inspections.find(i => i.id === id) || null;
+  },
+  async review(id, { status, reviewedBy, note }) {
+    const row = db.inspections.find(i => i.id === id);
+    if (row) Object.assign(row, { status, reviewed_by: reviewedBy, note: note || null, reviewed_at: new Date() });
+    return row || null;
+  },
+  async listByPlate(plate) {
+    return db.inspections.filter(i => i.plate_number === plate).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+  },
+  async listPending() {
+    return db.inspections.filter(i => i.status === 'pending');
+  },
+};
+
+const vehicleFeedbackModel = {
+  async create({ plateNumber, groupId, userId, cleanliness, condition, tags }) {
+    const row = { id: uuidv4(), plate_number: plateNumber, group_id: groupId, user_id: userId, cleanliness, condition, tags, created_at: new Date() };
+    db.vehicleFeedback.push(row);
+    return row;
+  },
+  async listByPlate(plate) {
+    return db.vehicleFeedback.filter(f => f.plate_number === plate);
+  },
+  async findByGroupAndUser(groupId, userId) {
+    return db.vehicleFeedback.find(f => f.group_id === groupId && f.user_id === userId) || null;
+  },
+};
+
 // ── ChatMessage model mock ────────────────────────────────────────────────────
 
 const chatMessageModel = {
@@ -447,6 +621,12 @@ module.exports = {
   groupModel,
   groupMemberModel,
   chatMessageModel,
+  vehicleModel,
+  inspectionModel,
+  vehicleFeedbackModel,
+  safetyReportModel,
+  noticeModel,
+  adminActionModel,
   withTransaction,
   // Expose raw in-memory tables so dashboard service can do JS-level joins
   _db: db,
