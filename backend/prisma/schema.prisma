@@ -211,3 +211,67 @@ model ChatMessage {
   @@index([group_id, created_at], name: "idx_chat_group")
   @@map("chat_messages")
 }
+
+// ---------------------------------------------------------------------------
+// Driver portal. Kept separate from users: a driver token never reaches the
+// student routes. driver_trips.group_id is a plain column (no relation), so
+// clearing rides never touches a driver's trip history.
+// ---------------------------------------------------------------------------
+
+model Driver {
+  id             String   @id @default(uuid()) @db.Uuid
+  email          String   @unique
+  driver_code    String   @unique // RP-DRV-XXXXXX, generated once, never changed
+  name           String
+  gender         String?
+  plate_number   String   @unique
+  vehicle_model  String
+  vehicle_colour String?
+  seats          Int      @default(3)
+  online         Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz()
+
+  documents DriverDocument[]
+  trips     DriverTrip[]
+
+  @@map("drivers")
+}
+
+model DriverDocument {
+  id          String    @id @default(uuid()) @db.Uuid
+  driver_id   String    @db.Uuid
+  type        String // licence | inspection_certificate
+  file_name   String
+  stored_name String
+  mime_type   String
+  size_bytes  Int
+  status      String    @default("pending") // pending | verified | rejected
+  uploaded_at DateTime  @default(now()) @db.Timestamptz()
+  reviewed_by String?
+  reviewed_at DateTime? @db.Timestamptz()
+  note        String?
+
+  driver Driver @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@index([driver_id, uploaded_at])
+  @@map("driver_documents")
+}
+
+model DriverTrip {
+  id           String    @id @default(uuid()) @db.Uuid
+  group_id     String    @db.Uuid
+  driver_id    String    @db.Uuid
+  plate_number String
+  status       String // declined | accepted | heading | started | completed
+  declined_at  DateTime? @db.Timestamptz()
+  accepted_at  DateTime? @db.Timestamptz()
+  heading_at   DateTime? @db.Timestamptz()
+  started_at   DateTime? @db.Timestamptz()
+  completed_at DateTime? @db.Timestamptz()
+  created_at   DateTime  @default(now()) @db.Timestamptz()
+
+  driver Driver @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, driver_id])
+  @@map("driver_trips")
+}

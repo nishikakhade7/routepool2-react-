@@ -130,9 +130,13 @@ async function riderBadge(plate) {
   const v = await vehicleModel.findByPlate(plate);
   if (!v) return null;
   const { inspection, registrationNumber, service } = await describe(v);
+  // An inspection certificate the driver uploaded in the driver portal, once an
+  // admin approves it, counts the same as an approved self-inspection.
+  const certOn = await require('../drivers/availability').inspectionCertificateApprovedOn(plate);
+  const inspectedOn = [inspection.current && inspection.inspectedOn, certOn && certOn.toISOString()].filter(Boolean).sort().pop() || inspection.inspectedOn;
   return {
-    verified: inspection.current,
-    inspectedOn: inspection.inspectedOn,
+    verified: inspection.current || Boolean(certOn),
+    inspectedOn,
     registrationNumber,
     serviceOverdue: service.overdue,
   };

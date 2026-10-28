@@ -3,6 +3,7 @@ import { Navigate, useParams, useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import Spinner from '../components/Spinner';
 import VehiclesPanel from '../components/VehiclesPanel';
+import DriversPanel from './admin/DriversPanel';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getMe, getAdminRides, cancelRide, unassignDriver,
@@ -12,6 +13,7 @@ import {
 
 const TABS = [
   { key: 'vehicles', label: 'Vehicles' },
+  { key: 'drivers', label: 'Drivers' },
   { key: 'rides', label: 'Rides' },
   { key: 'students', label: 'Students' },
   { key: 'reports', label: 'Reports' },
@@ -214,10 +216,10 @@ function AuditPanel() {
   );
 }
 
-const PANELS = { vehicles: VehiclesPanel, rides: RidesPanel, students: StudentsPanel, reports: ReportsPanel, notices: NoticesPanel, audit: AuditPanel };
+const PANELS = { vehicles: VehiclesPanel, drivers: DriversPanel, rides: RidesPanel, students: StudentsPanel, reports: ReportsPanel, notices: NoticesPanel, audit: AuditPanel };
 
 export default function Admin() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { tab = 'vehicles' } = useParams();
   const navigate = useNavigate();
   // Staff only. The backend refuses the data anyway; this keeps a student who
@@ -235,9 +237,15 @@ export default function Admin() {
     <div className="animate-screenIn" style={{ minHeight: '100vh' }}>
       <NavBar />
       <main className="screen-pad" style={{ maxWidth: 1100 }}>
-        <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: '0 0 16px' }}>
-          Admin
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <h1 style={{ fontFamily: 'Familjen Grotesk,sans-serif', fontWeight: 700, fontSize: 32, letterSpacing: '-.03em', margin: 0 }}>
+            Admin
+          </h1>
+          {/* Staff have no student Profile page, so sign-out lives here. */}
+          <button className="btn-ghost" onClick={logout} style={{ color: '#C24444', borderColor: 'rgba(194,68,68,.3)' }}>
+            Sign out
+          </button>
+        </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
           {TABS.map((t) => (

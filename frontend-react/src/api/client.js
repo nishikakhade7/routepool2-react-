@@ -58,7 +58,8 @@ async function fetchWithRetry(url, options) {
   }
 }
 
-async function request(method, path, body) {
+// Exported for the driver portal's API module (api/driver.js).
+export async function request(method, path, body) {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -78,9 +79,11 @@ async function request(method, path, body) {
 
   // Session no longer valid -> clear it and go sign in again.
   if (res.status === 401 && token) {
+    const wasDriver = localStorage.getItem('rp_role') === 'driver';
     localStorage.removeItem('rp_token');
     localStorage.removeItem('rp_user');
-    window.location.assign('/login');
+    localStorage.removeItem('rp_role');
+    window.location.assign(wasDriver ? '/driver/login' : '/login');
   }
 
   if (!res.ok) {

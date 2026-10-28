@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { sendOtp, verifyOtp, adminLogin } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import Spinner from '../components/Spinner';
@@ -194,6 +194,11 @@ export default function Login() {
                 {loading ? 'Sending…' : 'Send verification code'}
               </button>
               {error && <p style={{ margin: '12px 0 0', fontSize: 13, fontWeight: 600, color: '#C24444' }}>{error}</p>}
+              <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(33,28,38,.08)', fontSize: 13, fontWeight: 600, color: 'rgba(33,28,38,.55)', textAlign: 'center' }}>
+                Drive with RoutePool? <Link to="/driver/login" style={{ color: '#8A2B6B', fontWeight: 700 }}>Driver sign-in →</Link>
+                <span style={{ margin: '0 8px', color: 'rgba(33,28,38,.25)' }}>·</span>
+                <Link to="/admin/login" style={{ color: '#8A2B6B', fontWeight: 700 }}>Staff sign-in</Link>
+              </div>
             </div>
           )}
 

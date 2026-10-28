@@ -15,6 +15,7 @@ const ApiError = require('../../utils/ApiError');
 const env = require('../../config/env');
 const { MAX_GROUP_SIZE, MATCH_BUFFER_MINUTES, LEAVE_LOCK_MINUTES } = require('../../config/matchingConfig');
 const vehiclesService = require('../vehicles/vehicles.service');
+const driverAvailability = require('../drivers/availability');
 const nodeModel = require('../../models/node.model');
 const ridesService = require('../rides/rides.service');
 const { DEMO_DRIVERS, DRIVER_ETA_MINUTES, DRIVER_BUSY_AFTER_PICKUP_MINUTES } = require('../../config/drivers');
@@ -465,6 +466,12 @@ async function board(groupId, userId, code) {
   await assertMembership(groupId, userId);
   const expected = await userModel.ensureRiderCode(userId);
   if (String(code).trim() !== expected) throw ApiError.badRequest('That rider code does not match');
+  await markBoarded(groupId, userId);
+  return getGroup(groupId, userId);
+}
+
+// Shared by the rider's own boarding and the driver portal's "enter rider code".
+async function markBoarded(groupId, userId) {
   const members = await groupMemberModel.listByGroup(groupId);
   await groupMemberModel.markBoarded(groupId, userId);
 
@@ -476,7 +483,6 @@ async function board(groupId, userId, code) {
     const fare = await fareBreakup(g.pickup_node_id, ridersOf(members), null);
     await vehiclesService.recordRideKm(g.driver.plateNumber, fare.distanceKm);
   }
-  return getGroup(groupId, userId);
 }
 
 // "Can't make it": drop the rider (and their request), re-split the fare for
@@ -567,15 +573,22 @@ async function getDriver(groupId, userId) {
     // Maintenance gate: an auto with an expired document, or one suspended over
     // rider complaints, is off the road - it is never assigned a new ride.
     const roadworthy = await vehiclesService.eligiblePlates();
-    const free = DEMO_DRIVERS.filter((d) => !busy.has(d.plateNumber) && roadworthy.has(d.plateNumber));
+    // Driver portal: offline drivers, ones whose documents need re-verification,
+    // and anyone who declined this ride are skipped.
+    const unavailable = await driverAvailability.unavailablePlates(groupId);
+    const free = DEMO_DRIVERS.filter((d) => !busy.has(d.plateNumber) && roadworthy.has(d.plateNumber) && !unavailable.has(d.plateNumber));
     const eligible = requirement.female ? free.filter((d) => d.gender === 'female') : free;
     if (eligible.length === 0) throw noDriverError(requirement, userId, free.length);
 
-    const pick = eligible[Math.floor(Math.random() * eligible.length)];
+    // Drivers online in the portal get the ride before roster drivers who aren't using it.
+    const online = await driverAvailability.onlinePlates();
+    const pool = eligible.some((d) => online.has(d.plateNumber)) ? eligible.filter((d) => online.has(d.plateNumber)) : eligible;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
     const { min, max } = DRIVER_ETA_MINUTES;
     const etaMinutes = min + Math.floor(Math.random() * (max - min + 1));
     driver = await groupModel.setDriverIfAbsent(groupId, {
       ...pick,
+      ...(await driverAvailability.portalDriverFor(pick.plateNumber)),
       femaleRequested: requirement.female,
       assignedAt: new Date().toISOString(),
       arrivesAt: new Date(Date.now() + etaMinutes * 60000).toISOString(),
@@ -661,4 +674,4 @@ async function postChat(groupId, userId, message) {
   };
 }
 
-module.exports = { join, board, assignedPlate, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, listChat, postChat, fareBreakup };
+module.exports = { join, board, markBoarded, describeGroup, pickupTimeOf, assignedPlate, setMeeting, listAvailable, listMine, joinById, getGroup, leave, getDriver, setDriverPreference, pay, listChat, postChat, fareBreakup };
